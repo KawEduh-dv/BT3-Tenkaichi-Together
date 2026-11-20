@@ -157,7 +157,9 @@ def payload():
     a.label('back');a.lw(14,8,8);a.branch(4,14,0,'stock');a.addiu(10,0,5);a.branch(5,14,10,'root_back');a.addiu(14,0,4);a.jump('page');a.label('root_back');a.move(14,0);a.jump('page')
     a.label('arm');a.lw(14,8,64);a.branch(4,14,0,'arm_stock');a.i(11,15,14,len(PAGES)+1);a.branch(4,15,0,'arm_stock');a.addiu(14,14,-1);a.sw(14,8,68);a.jump('activate')
     a.label('arm_stock');a.sw(0,8,64);a.sw(0,8,60);a.addiu(10,0,6);a.sw(10,8,12);a.addiu(10,0,4);a.sw(10,8,4);a.jump('consume')
-    a.label('toggle');a.addiu(10,0,2);a.branch(4,9,10,'stock')
+    # Select opens the mod menu; Triangle closes it. Repeated Select presses
+    # must not alternate atlas restoration and activation during menu fades.
+    a.label('toggle');a.addiu(10,0,2);a.branch(4,9,10,'consume')
     a.label('activate');a.lw(10,11,0x60);a.lw(12,8,0x144);a.branch(5,10,12,'disown')
     a.lw(10,11,0x70);a.lw(12,8,0x148);a.branch(5,10,12,'disown')
     for i in range(13):a.lw(10,11,0x118+i*4);a.sw(10,8,0x100+i*4)
@@ -238,6 +240,10 @@ def _control(ram,obj,atlases,settings):
     struct.pack_into('<I',ctl,0x80,int(settings.get('coop_independent_selection',True)))
     struct.pack_into('<I',ctl,coop_character_select.ALL_CONTROLLERS,int(settings.get('all_controllers_character_select',False)))
     struct.pack_into('<I',ctl,player_slot_labels.VISIBLE,int(settings.get('show_player_slot_labels',True)))
+    if settings.get('fullcoop_interface'):
+        # The existing return-page mechanism opens the seven-row root without
+        # requiring Select. It uses no additional native plate or control word.
+        struct.pack_into('<I',ctl,64,1)
     # Removed at the user's request. Retain dormant guest bytes for exact
     # prepared-state compatibility, but never reactivate an obsolete setting.
     struct.pack_into('<I',ctl,coop_character_select.SHOW_HINT,0)

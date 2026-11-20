@@ -56,5 +56,17 @@ class CampaignHealthTests(unittest.TestCase):
         self.put(core.MODE+8,0x110004)
         with self.assertRaises(ValueError):self.plan()
 
+    def test_custom_allied_and_enemy_hp_keep_damage_fraction(self):
+        plan=build_memory(self.ram,present_mask=7,ally_percent=200,enemy_percent=300)
+        values={b['address']:struct.unpack('<2I',bytes.fromhex(b['data_hex'])) for b in plan['blocks']}
+        self.assertEqual(values[0x120000+0x9e4],(60000,120000))
+        self.assertEqual(values[0x124000+0x9e4],(60000,120000))
+        self.assertEqual(values[0x122000+0x9e4],(90000,180000))
+
+    def test_invalid_hp_setting_is_refused_before_writes(self):
+        for value in (True,0,401,150.5):
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                build_memory(self.ram,present_mask=7,enemy_percent=value)
+
 
 if __name__=='__main__':unittest.main()

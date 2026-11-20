@@ -1,5 +1,6 @@
 """Local scenario receipts: independent seats, no accidental versus or story claim."""
 import unittest
+from unittest.mock import Mock,patch
 import scenario_menu
 import story_missions
 
@@ -14,6 +15,20 @@ def mission():
 
 
 class CoOpScenarioTests(unittest.TestCase):
+    def test_menu_player_choice_reaches_preparation(self):
+        original=mission()
+        for players in (1,2):
+            browser=scenario_menu.Controller(settings={'fullcoop_interface':True})
+            browser.local_players=players
+            with patch('story_runtime.validate_compilation',side_effect=story_missions.validate),\
+                 patch('story_missions.arm') as arm:
+                browser.launch(Mock(),original)
+            self.assertEqual(arm.call_args.args[0]['human_players'],players)
+            receipt=browser.selection_receipt(dict(mode='teams',humans=1,choice=0))
+            self.assertEqual(receipt['humans'],players)
+            if players==2:self.assertEqual(receipt['assignment'],(0,2))
+            else:self.assertNotIn('assignment',receipt)
+        self.assertEqual(original['human_players'],2)
     def test_duplicate_character_has_two_seats(self):
         d = story_missions.validate(mission())
         browser = object.__new__(scenario_menu.Controller)

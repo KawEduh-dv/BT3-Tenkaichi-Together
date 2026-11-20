@@ -10,8 +10,11 @@ Projeto de cooperativo local para **Dragon Ball Z: Budokai Tenkaichi 3**, execut
 
 - Dois aliados independentes, com controles separados, na luta original contra Raditz.
 - Entrada pelos menus originais até Dragon History e seleção da missão; preparação cooperativa nessa luta.
+- Preparação dessa luta na mesma execução do emulador, sem recarregar estados entre as etapas, com controles independentes verificados depois.
 - A fase continua com o outro jogador controlável quando P1 ou P2 é derrotado, nos testes da fase de Raditz.
-- Aumento de HP dos inimigos: a configuração inicial usa 150% do HP original, com mínimo de 60.000.
+- Vida dos aliados e inimigos configurável entre 25% e 400%, preservando a proporção de dano e os personagens derrotados. O padrão dos inimigos é 150%, com mínimo de 60.000 HP.
+- Escolha de 1 ou 2 jogadores nos detalhes das batalhas cooperativas isoladas. Com 1 jogador, o parceiro é controlado pela IA.
+- Menu próprio com entrada automática, Select sem fechar/reabrir em sequência e Triângulo para retornar ao menu original.
 - Tela de créditos própria, com atribuição ao projeto de origem.
 
 Esses resultados são testes locais de desenvolvimento; não equivalem à certificação de toda a campanha.
@@ -21,7 +24,7 @@ Esses resultados são testes locais de desenvolvimento; não equivalem à certif
 - Ativação e continuação da campanha completa, preservando os eventos e os saves.
 - R3 de troca somente quando existe um aliado na reserva. Um personagem já em combate não é um destino de troca.
 - Troca para o primeiro jogador que apertar; transformações sincronizadas quando aplicáveis.
-- Configurações de HP, dificuldade da IA, entradas individuais, em duplas ou simultâneas e inimigos por jogador.
+- Pergunta de 1 ou 2 jogadores ao entrar em Dragon History; dificuldade da IA, entradas individuais, em duplas ou simultâneas e inimigos por jogador.
 - Menus com arte própria e presets de regras.
 - Compatibilidade por perfis de ISO. Mods que alteram código ou scripts precisam de validação; compatibilidade universal não é garantida.
 
@@ -35,7 +38,9 @@ Este repositório reúne a extensão em desenvolvimento, não o jogo nem uma ISO
 4. Copie os arquivos de `extension/` para a pasta `tools/` do jogo nessa cópia. Eles dependem dos demais módulos da base 14.6; não funcionam sozinhos.
 5. Em `mod-settings.json`, mantenha as configurações existentes e acrescente `"fullcoop_interface": true`.
 6. Copie os cenários de `missions/FullCoop/` para a mesma pasta relativa da instalação.
-7. Abra o launcher da base. No menu do mod, escolha as batalhas cooperativas e um cenário de teste, com dois jogadores na mesma equipe.
+7. Abra o launcher da base. No menu do mod, escolha as batalhas cooperativas e um cenário de teste. Nos detalhes, use esquerda/direita para escolher 1 ou 2 jogadores antes de confirmar.
+
+O menu próprio abre automaticamente. Triângulo volta ao menu original; Select abre o menu próprio a partir dele. Para as missões cooperativas preparadas, os ajustes de HP ficam em **Configurações → História cooperativa** e são aplicados na preparação seguinte.
 
 **Entrar em Dragon History pelo launcher comum ainda não ativa automaticamente uma campanha cooperativa completa.** Os scripts internos de diagnóstico não são um atalho de jogo nem um instalador para usuários finais. Um tutorial da versão jogável será publicado junto da versão que concluir essa integração.
 
@@ -62,6 +67,7 @@ Esse perfil de teclado não é imposto pela cópia das fontes; configure as port
 |---|---|
 | Projeto, direção e idealização | **KawEduh** |
 | Base técnica de combate simultâneo | **[Tag Team Mod — tehmufti e colaboradores](https://github.com/tehmufti/Budokai-Tenkaichi-3-Tag-Team-Mod-PCSX2-)** |
+| Referência para leitura dos scripts GSC | [Documentação de Tenkaichi3Decomp](https://github.com/z3xox/Tenkaichi3Decomp/blob/main/docs/systems/script.md), consultada para a análise do formato |
 | Jogo original | Créditos e direitos dos respectivos criadores e titulares de Dragon Ball Z: Budokai Tenkaichi 3 |
 
 O projeto reaproveita sistemas e código da base, sem utilizar seu logo ou suas texturas de apresentação. Os retratos e recursos originais são lidos da ISO fornecida pelo jogador. A arte nova de apresentação pertence ao desenvolvimento desta extensão.

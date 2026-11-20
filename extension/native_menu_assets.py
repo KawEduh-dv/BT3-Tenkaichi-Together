@@ -280,7 +280,7 @@ def descriptions(ram,obj,button='Select',show_hint=True,settings=None):
     own=bool((settings or {}).get('fullcoop_interface'))
     if own:
         pages=(FULLCOOP_DESCRIPTIONS,)+DESCRIPTIONS[1:]
-        hint='['+button+']: Menu original' if show_hint else ''
+        hint='[Triangulo]: Menu original' if show_hint else ''
     custom=dbt([native_text(tr(text,settings)+('\n'+hint if hint else '')) for page in pages for text in page])
     source=u32(ram,obj+8)
     if u32(ram,source)!=64 or u32(ram,source+4)!=0x140:

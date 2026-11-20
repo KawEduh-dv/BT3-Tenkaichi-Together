@@ -122,15 +122,16 @@ def scenario_browser(controller):
                 fighters=sorted((f for f in doc['fighters'] if f['team']==side),key=lambda f:f['slot'])
                 height=64 if len(fighters)<=2 else 54 if len(fighters)==3 else 40 if len(fighters)==4 else 34
                 for index,f in enumerate(fighters[:5]):
-                    player=(index+1 if column==0 and index<doc.get('human_players',1) and not controller.cpu_only else None)
+                    humans=(getattr(controller,'local_players',2) if doc.get('human_players')==2 else doc.get('human_players',1))
+                    player=(index+1 if column==0 and index<humans and not controller.cpu_only else None)
                     portrait_card(image,f,(x,125+index*(height+4),x+218,125+index*(height+4)+height),player,compact=height<40)
             panel(draw,(22,315,490,359),selected=True)
-            count=doc.get('human_players',1)
+            count=getattr(controller,'local_players',2) if doc.get('human_players')==2 else doc.get('human_players',1)
             label(draw,'SIMULAÇÃO CPU' if controller.cpu_only else ('COOPERATIVO · 2 JOGADORES' if count==2 else '1 JOGADOR'),
                   (34,322),435,12,True,fill=GOLD)
             stage=doc.get('stage') or {}
             label(draw,stage.get('name','Escolher arena ao continuar'),(34,340),435,10,fill=DIM)
-            footer(image,'Jogar','Voltar','Esq./Dir.: alternar jogadores e simulação · Batalha independente')
+            footer(image,'Jogar','Voltar','Esq./Dir.: 1 ou 2 jogadores · Em 1 jogador, o parceiro usa IA')
         else:
             panel(draw,(22,122,490,235))
             label(draw,'Batalha indisponível',(36,138),434,16,True,fill=GOLD)

@@ -491,7 +491,9 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     if (SERIAL=='SLUS-21678' and battle_mode=='coop'
             and struct.unpack_from('<I',ram,0x331dd0)[0]==1):
         import history_coop_health
-        builders.append(lambda r: history_coop_health.build_memory(r,source=source,present_mask=present_mask))
+        builders.append(lambda r: history_coop_health.build_memory(r,source=source,present_mask=present_mask,
+            ally_percent=settings.get('history_ally_hp_percent',100),
+            enemy_percent=settings.get('history_enemy_hp_percent',150)))
     import localization
     localization.pin_battle(preferences)
     with localization.using(preferences):

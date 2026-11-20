@@ -194,6 +194,7 @@ class Controller:
         self.row=0;self.detail=False;self.notice='';self.document=None
         self.launched=False;self.left_main=False;self.route_deadline=0
         self.cpu_only=False;self.ready_input=False;self.last_direction=0;self.next_repeat=0
+        self.local_players=2
         self.failed=False
         self.quick=None;self.quick_poll=0;self.checkpoint_ready=True
 
@@ -249,7 +250,11 @@ class Controller:
             if step:self.row=(self.row+step)%len(self.entries);dirty=True
             if edges&RAW_ACCEPT:self.detail=True;dirty=True
         elif self.detail:
-            if edges&0xA0:self.cpu_only=not self.cpu_only;dirty=True
+            if edges&0xA0:
+                if self.settings.get('fullcoop_interface'):
+                    self.local_players=3-self.local_players;self.cpu_only=False
+                else:self.cpu_only=not self.cpu_only
+                dirty=True
             if edges&RAW_ACCEPT:
                 try:
                     entry=self.entries[self.row]
@@ -265,7 +270,10 @@ class Controller:
         """The browser's accept (Cross; Japan Circle): arm one mission and let the native menus run it."""
         import native_mode_menu as menu
         from story_runtime import validate_compilation
-        document=copy.deepcopy(document);validate_compilation(document)
+        document=copy.deepcopy(document)
+        if self.settings.get('fullcoop_interface') and document.get('human_players')==2 and not cpu_only:
+            document['human_players']=self.local_players
+        validate_compilation(document)
         missions.arm(document);self.document=document
         p.write(CONTROL+20,struct.pack('<8I',1,1800,0,0,0,0xFFFFFFFF,0,0))
         # Semantic choices stay native: 1-player Team Battle or all CPU.
