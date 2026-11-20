@@ -1,0 +1,22 @@
+# Local documents and development output are never publication inputs.
+*.txt
+*.log
+*.iso
+*.bin
+*.p2s
+*.ps2
+*.elf
+*.zip
+*.7z
+*.pyc
+__pycache__/
+.venv/
+logs/
+reports/
+attachments/
+prompts/
+runtime*/
+memcards/
+sstates/
+analysis/
+artifacts/

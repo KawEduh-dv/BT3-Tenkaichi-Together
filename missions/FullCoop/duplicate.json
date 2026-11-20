@@ -1,0 +1,52 @@
+{
+  "schema": "tag-team-mission",
+  "version": 1,
+  "game_family": "bt3",
+  "id": "fullcoop-test-duplicate",
+  "title": "Goku + Goku vs Vegeta",
+  "description": "Teste de combate isolado. Nao e uma missao do Dragon History e nao avanca a campanha.",
+  "human_players": 2,
+  "player_team": 1,
+  "player_selection": false,
+  "stage": {
+    "id": 0,
+    "name": "Wasteland - Noon"
+  },
+  "fighters": [
+    {
+      "id": "goku_p1",
+      "team": 1,
+      "slot": 1,
+      "character": 1,
+      "costume": 0,
+      "hp": 30000,
+      "reserve": false
+    },
+    {
+      "id": "goku_p2",
+      "team": 1,
+      "slot": 2,
+      "character": 1,
+      "costume": 1,
+      "hp": 30000,
+      "reserve": false
+    },
+    {
+      "id": "vegeta_cpu",
+      "team": 2,
+      "slot": 1,
+      "character": 29,
+      "costume": 0,
+      "hp": 60000,
+      "reserve": false
+    }
+  ],
+  "events": [],
+  "source": {
+    "kind": "local-coop-validation",
+    "gameplay_tested": false,
+    "native_campaign": false
+  },
+  "defeat_grace_seconds": 30,
+  "cpu_profiles": {}
+}
