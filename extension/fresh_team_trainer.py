@@ -494,6 +494,11 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
         builders.append(lambda r: history_coop_health.build_memory(r,source=source,present_mask=present_mask,
             ally_percent=settings.get('history_ally_hp_percent',100),
             enemy_percent=settings.get('history_enemy_hp_percent',150)))
+        # The role adapter has gameplay evidence for the original Raditz
+        # script only. Other missions still require their own event validation.
+        if struct.unpack_from('<I',ram,0x333bc0)[0]==0 and present_mask==7:
+            import history_story_roles
+            builders.append(lambda r: history_story_roles.build_memory(r,source=source))
     import localization
     localization.pin_battle(preferences)
     with localization.using(preferences):

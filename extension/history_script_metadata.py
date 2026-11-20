@@ -39,7 +39,9 @@ def action(ram,address,pool_address):
         if kind not in (1,2,3):raise ValueError('Unsupported GSC instruction type')
         count=(header>>8)&255 if kind==1 else 0
         args=operands(position+4,count)
-        command=dict(address=position,kind=kind,opcode=header>>16,args=args,options=[])
+        opcode=header>>16
+        if kind in (2,3) and opcode&0x8000:opcode-=0x10000
+        command=dict(address=position,kind=kind,opcode=opcode,args=args,options=[])
         position+=4+count*4
         while position<end and u(position)&15==8:
             option=u(position);count=option>>16
@@ -68,7 +70,7 @@ def available_replacement(event,active_slots):
     return any(change['slot'] not in active_slots.get(change['side'],()) for change in changes)
 
 
-def loaded_events(ram):
+def loaded_events(ram, *, include_setup=False):
     """Find one structurally complete loaded action container and its pool."""
     found=[];cursor=0
     while True:
@@ -83,7 +85,7 @@ def loaded_events(ram):
             while position<end:
                 _,action_end,label=chunk(ram,position,b'GSAC')
                 event=action(ram,position,pool)
-                if 10000<=label<10052:
+                if 10000<=label<10052 or include_setup:
                     if label in events:raise ValueError('Duplicate event action')
                     events[label]=event
                 position=action_end+16
@@ -92,3 +94,15 @@ def loaded_events(ram):
         except (ValueError,struct.error):continue
     if len(found)!=1:raise ValueError('Expected one complete loaded story action container')
     return found[0]
+
+
+def flatten_action(actions,label,trail=()):
+    label&=0xffffffff
+    if label in trail or len(trail)>=32:raise ValueError('Recursive GSC action graph')
+    if label not in actions:raise ValueError('GSC called action is missing')
+    result=[]
+    for command in actions[label]['commands']:
+        if command['kind'] in (2,3):
+            result.extend(flatten_action(actions,command['opcode'],trail+(label,)))
+        else:result.append(command)
+    return result

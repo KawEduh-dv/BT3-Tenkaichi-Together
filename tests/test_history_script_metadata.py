@@ -1,6 +1,6 @@
 import struct
 import unittest
-from history_script_metadata import action,replacement_prompt,available_replacement
+from history_script_metadata import action,replacement_prompt,available_replacement,flatten_action
 
 
 class StoryScriptMetadataTests(unittest.TestCase):
@@ -38,6 +38,19 @@ class StoryScriptMetadataTests(unittest.TestCase):
     def test_truncated_chunk_is_refused(self):
         ram=self.fixture();struct.pack_into('<I',ram,8,256)
         with self.assertRaises(ValueError):action(ram,0,128)
+
+    def test_signed_call_label_resolves_setup_subroutine(self):
+        ram=self.fixture()
+        struct.pack_into('<2I',ram,16,0xfffd0002,0)
+        main=action(ram,0,128)
+        self.assertEqual(main['commands'][0]['opcode'],-3)
+        target=action(self.fixture(),0,128)
+        self.assertEqual(flatten_action({1000:main,0xfffffffd:target},1000),target['commands'])
+
+    def test_recursive_or_missing_called_actions_are_refused(self):
+        call=dict(commands=[dict(kind=2,opcode=1000)])
+        with self.assertRaises(ValueError):flatten_action({1000:call},1000)
+        with self.assertRaises(ValueError):flatten_action({1000:call},42)
 
 
 if __name__=='__main__':unittest.main()

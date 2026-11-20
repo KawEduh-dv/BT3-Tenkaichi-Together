@@ -15,6 +15,7 @@ Projeto de cooperativo local para **Dragon Ball Z: Budokai Tenkaichi 3**, execut
 - Vida dos aliados e inimigos configurável entre 25% e 400%, preservando a proporção de dano e os personagens derrotados. O padrão dos inimigos é 150%, com mínimo de 60.000 HP.
 - Escolha de 1 ou 2 jogadores nos detalhes das batalhas cooperativas isoladas. Com 1 jogador, o parceiro é controlado pela IA.
 - Menu próprio com entrada automática, Select sem fechar/reabrir em sequência e Triângulo para retornar ao menu original.
+- Adaptador de eventos do Raditz: as trocas para Goku/Piccolo já presentes não pedem R3 nem recarregam outro corpo. Os dois jogadores voltaram a responder depois dos eventos nos testes locais. Esse adaptador ainda não certifica outras missões.
 - Tela de créditos própria, com atribuição ao projeto de origem.
 
 Esses resultados são testes locais de desenvolvimento; não equivalem à certificação de toda a campanha.
