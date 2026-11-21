@@ -53,6 +53,8 @@ class NativeMenuReadinessTests(unittest.TestCase):
             self.assertIsNone(menu.try_owned_plan(object()))
         with patch.object(menu,'owned_plan',side_effect=ValueError('Invalid native menu asset pointer')):
             self.assertIsNone(menu.try_owned_plan(object()))
+        with patch.object(menu,'owned_plan',side_effect=ValueError('Native animated label nodes changed')):
+            self.assertIsNone(menu.try_owned_plan(object()))
 
     def test_unrecognized_menu_errors_still_surface(self):
         with patch.object(menu,'owned_plan',side_effect=ValueError('Unexpected native menu row count')):

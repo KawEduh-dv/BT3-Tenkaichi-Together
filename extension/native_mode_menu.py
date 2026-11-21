@@ -358,7 +358,8 @@ def try_owned_plan(ram,settings=None):
     try:
         return owned_plan(ram,settings)
     except ValueError as error:
-        if str(error) in ('Native menu address out of range','Invalid native menu asset pointer'):
+        if str(error) in ('Native menu address out of range','Invalid native menu asset pointer',
+                          'Native animated label nodes changed'):
             return None
         raise
 
