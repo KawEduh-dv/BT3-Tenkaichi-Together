@@ -10,6 +10,7 @@ Projeto de cooperativo local para **Dragon Ball Z: Budokai Tenkaichi 3**, execut
 
 - Dois aliados independentes, com controles separados, na luta original contra Raditz.
 - Entrada pelos menus originais até Dragon History e seleção da missão; preparação cooperativa nessa luta.
+- Tela de carregamento própria confirmada em Dragon History contra Raditz: mostrou Goku como P1, Piccolo como P2, Raditz como CPU e o progresso de preparação; só revelou a arena depois que os três estavam prontos.
 - Preparação dessa luta na mesma execução do emulador, sem recarregar estados entre as etapas, com controles independentes verificados depois.
 - A fase continua com o outro jogador controlável quando P1 ou P2 é derrotado, nos testes da fase de Raditz.
 - Vida dos aliados e inimigos configurável entre 25% e 400%, preservando a proporção de dano e os personagens derrotados. O padrão dos inimigos é 150%, com mínimo de 60.000 HP.
@@ -23,7 +24,6 @@ Esses resultados são testes locais de desenvolvimento; não equivalem à certif
 ## O que está sendo implementado
 
 - Ativação e continuação da campanha completa, preservando os eventos e os saves.
-- Confirmação no PCSX2 da tela de carregamento própria durante a entrada de Dragon History. O caminho para a cena de batalha já está coberto pelos testes offline; ainda falta validar essa imagem na próxima abertura do emulador.
 - R3 de troca somente quando existe um aliado na reserva. Um personagem já em combate não é um destino de troca.
 - Troca para o primeiro jogador que apertar; transformações sincronizadas quando aplicáveis.
 - Pergunta de 1 ou 2 jogadores ao entrar em Dragon History; dificuldade da IA, entradas individuais, em duplas ou simultâneas e inimigos por jogador.
