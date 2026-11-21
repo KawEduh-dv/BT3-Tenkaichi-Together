@@ -374,6 +374,23 @@ def subroutines():
 def SUB():return subroutines()[1]
 
 
+def emit_battle_surface_gate(a,ready='surface_ready',undrawn='undrawn'):
+    """Allow the battle cover in ordinary matches and opted-in Dragon History battles.
+
+    Dragon History uses scene 8 while the ordinary LOOP_FLAG stays zero. The
+    accepted mode plus the story marker and scene-manager state keep this
+    exception out of chapter menus and ordinary story play.
+    """
+    import native_preparation
+    a.li(8,SCENE_LOOP);a.lw(8,8);a.addiu(9,0,1);a.branch(4,8,9,ready)
+    a.li(8,native_preparation.ACCEPTED_MODE);a.lw(8,8);a.addiu(9,0,1);a.branch(5,8,9,undrawn)
+    a.li(8,A(0x331DD0));a.lw(8,8);a.addiu(9,0,1);a.branch(5,8,9,undrawn)
+    a.li(8,A(0x2FF10C));a.lw(8,8)
+    a.li(9,0x100000);a.r(0x2B,10,8,9);a.branch(5,10,0,undrawn)
+    a.li(9,0x1FFF000);a.r(0x2B,10,8,9);a.branch(4,10,0,undrawn)
+    a.lw(8,8,0x18);a.addiu(9,0,8);a.branch(5,8,9,undrawn);a.jump(ready)
+
+
 def payload(menu_surface=True,native_modals=True):
     import native_preparation
     import loading_lights_a as ks_a
@@ -412,7 +429,7 @@ def payload(menu_surface=True,native_modals=True):
         a.lw(9,8,32);a.addiu(10,0,4);a.branch(5,9,10,'undrawn')
         if native_modals:a.label('menu_ready')
         a.li(8,SCENE_LOOP);a.lw(8,8);a.branch(5,8,0,'undrawn');a.jump('surface_ready')
-        a.label('battle_surface');a.li(8,SCENE_LOOP);a.lw(8,8);a.addiu(9,0,1);a.branch(5,8,9,'undrawn')
+        a.label('battle_surface');emit_battle_surface_gate(a)
         a.label('surface_ready')
     else:
         a.li(8,SCENE_LOOP); a.lw(8,8); a.addiu(9,0,1);a.branch(5,8,9,'undrawn')

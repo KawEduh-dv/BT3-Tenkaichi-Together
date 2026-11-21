@@ -553,6 +553,8 @@ class Autopilot:
         self.manual_pause = manual_pause
         self.presentation = presentation
         self.cover_started = False
+        self.cover_confirmed = False
+        self.cover_visibility_reported = False
         self.progress = 0
         self.play_intro_after_loading = False
         self.deferred_intro_object = None
@@ -1445,9 +1447,14 @@ class Autopilot:
                 self.presentation.show(title, message, self.progress)
             if not self.cover_started:
                 self.cover_started = True
-                self.cover_since, self.stage_times = time.monotonic(), []   # the 'loading cover: shown' line
-                if not self.presentation.wait_visible():
-                    log('Loading screen is waiting for the game window; preparation status is also in this window.')
+                self.cover_since, self.stage_times = time.monotonic(), []
+                self.cover_confirmed = self.cover_visibility_reported = False
+            if not self.cover_confirmed:
+                timeout=0.05 if self.cover_visibility_reported else 2.0
+                self.cover_confirmed=bool(self.presentation.wait_visible(timeout=timeout))
+                if not self.cover_confirmed and not self.cover_visibility_reported:
+                    log('Loading screen has not confirmed a visible frame yet; fighter preparation is still in progress.')
+                    self.cover_visibility_reported=True
         except (OSError, RuntimeError) as error:
             log(f'Loading screen unavailable: {error}. Preparation status remains in this window.')
 
@@ -1505,7 +1512,8 @@ class Autopilot:
         now = time.monotonic()
         steps = [f'{name} {end-start:.1f}' for (name, start), (_, end) in zip(times, times[1:]+[('', now)])
                  if name != 'Ready']
-        log(f'loading cover: shown {now-since:.1f} s; before preparation {times[0][1]-since:.1f}; ' + ', '.join(steps))
+        state='shown' if getattr(self,'cover_confirmed',False) else 'not confirmed visible'
+        log(f'loading cover: {state} for {now-since:.1f} s; before preparation {times[0][1]-since:.1f}; ' + ', '.join(steps))
         self.cover_since = self.stage_times = None
 
     def fail(self, operation, error, *, stage=None, context=None, cover=True, recovered=False):
