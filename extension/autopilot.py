@@ -2598,6 +2598,16 @@ class Autopilot:
             # battle loop active
             if self.state == 'ACTIVE':
                 if obs.team_mode == 0:
+                    if self.history_coop:
+                        # Dragon History clears the mod marker during native
+                        # victory/result transitions too. Treating that as the
+                        # versus-mode Fight Again choice reloads the checkpoint
+                        # and repeats the same mission instead of advancing the
+                        # campaign. Let the game's result and story transition run.
+                        if not getattr(self, 'history_result_wait_logged', False):
+                            log('Dragon History result: waiting for the native campaign transition; rematch reload suppressed.')
+                            self.history_result_wait_logged = True
+                        continue
                     log(say(SAY_REMATCH_LOADING))
                     self.cover('Getting everyone ready for the rematch...', 90)
                     restore_error=(RuntimeError(f'The rematch checkpoint could not be written: {self.rematch_unavailable}')
@@ -2623,6 +2633,7 @@ class Autopilot:
                         # One explained block (no second English line); the game keeps its failure cover.
                         self.fail('rematch',restore_error or RuntimeError(REMATCH_UNCONFIRMED))
                 else:
+                    self.history_result_wait_logged = False
                     self.service_extra_reloads(obs)
                     self.watch_freeze(obs)
                 continue
