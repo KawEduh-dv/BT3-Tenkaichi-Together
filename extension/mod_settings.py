@@ -102,6 +102,7 @@ DEFAULTS = {'version': VERSION, MODE_KEY: 'all', ULTIMATE_KEY: False,
             NATIVE_HUD_KEY: True, KILL_FEED_KEY: True, KILL_SCORE_KEY: False, NPC_TRANSFORM_KEY: False, NPC_GIANT_KEY: False,
             NPC_OVERRIDES_KEY: {}, CORPSE_SAFETY_KEY: True,
             REVIVE_KEY: False, REVIVE_COST_KEY: 4, REVIVE_CHANNEL_KEY: 4.0}
+DEFAULTS['fullcoop_interface'] = True
 DEFAULTS.update(feature_preferences.DEFAULTS)
 DEFAULTS.update(history_ally_hp_percent=125, history_enemy_hp_percent=150)
 

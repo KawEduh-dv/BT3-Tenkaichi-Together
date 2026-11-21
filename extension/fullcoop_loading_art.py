@@ -298,24 +298,26 @@ def compose(teams, progress, message, mode='teams', humans=2, error=None):
 def transition():
     image = _extension_backdrop((768,576))
     d = ImageDraw.Draw(image)
-    logo=_tag_team_logo()
-    if logo is not None:
-        logo.thumbnail((570,405),Image.Resampling.LANCZOS)
-        image.paste(logo,((768-logo.width)//2,32),logo)
-    d.rounded_rectangle((95,456,673,544),radius=16,fill=(7,23,43),outline=(255,193,54),width=2)
-    centred(d,'TENKAICHI TOGETHER · EXTENSÃO COOPERATIVA',468,
-            fonts.truetype('sans-bold',20),width=768,fill=WHITE)
-    centred(d,'Por KawEduh  ·  Base técnica: Tag Team Mod',506,
-            fonts.truetype('sans',15),width=768,fill=GOLD)
+    # All marks on the transition are generated here. Do not load the upstream
+    # logo or any game texture: only the in-game loading cards use ISO portraits.
+    d.ellipse((250,53,518,321),fill=(9,40,75),outline=(70,149,211),width=3)
+    d.ellipse((267,70,501,304),outline=GOLD,width=2)
+    d.arc((282,84,486,290),200,520,fill=(247,130,47),width=8)
+    for x,y in ((334,154),(396,128),(430,183),(374,222)):
+        d.ellipse((x-7,y-7,x+7,y+7),fill=(225,83,56),outline=(255,215,106),width=2)
+    # Energy strokes and small stars give the splash its own identity at native
+    # PS2 menu resolution, while keeping the title legible after PSMT4 packing.
+    for i in range(5):
+        y=335+i*13
+        d.line((154,y,614,y-20),fill=(44,120+i*5,184+i*4),width=2)
+    d.rounded_rectangle((74,354,694,483),radius=18,fill=(7,23,43),outline=(255,193,54),width=2)
+    centred(d,'TENKAICHI TOGETHER',370,fonts.truetype('sans-bold',39),width=768,fill=WHITE)
+    centred(d,'CARREGANDO',422,fonts.truetype('sans-bold',22),width=768,fill=GOLD)
+    d.rounded_rectangle((251,455,517,463),radius=4,fill=(20,57,91),outline=(81,142,188),width=1)
+    d.rounded_rectangle((255,458,365,460),radius=2,fill=GOLD)
+    centred(d,'Por KawEduh  ·  Base técnica: Tag Team Mod',501,
+            fonts.truetype('sans',15),width=768,fill=DIM)
     return image
-
-
-def _tag_team_logo():
-    path=Path(__file__).resolve().parents[1]/'Tag Team Mod Logo.png'
-    try:
-        with Image.open(path) as source:return source.convert('RGBA')
-    except OSError:
-        return None
 
 
 def _extension_backdrop(size):
