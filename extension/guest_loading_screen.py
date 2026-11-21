@@ -538,7 +538,12 @@ def code_pieces():
     # same-team duplicate unlock has to be resident from boot like the menu.
     # Keep each address exactly once: the native pager wraps the old pad hook,
     # whose code remains available for the established Duel route.
-    pieces=(native_preparation.code_pieces()+mode_menu.code_pieces()+native_mode_menu.code_pieces()+select_duplicates.code_pieces()
+    # The USA transport dispatches to the original Duel gate by default and
+    # to the reviewed story gate only after Dragon History is explicitly
+    # enabled. Other regional executables keep their audited native transport.
+    preparation=(native_preparation.dynamic_code_pieces()
+                 if SERIAL=='SLUS-21678' else native_preparation.code_pieces())
+    pieces=(preparation+mode_menu.code_pieces()+native_mode_menu.code_pieces()+select_duplicates.code_pieces()
             +[(CODE,payload()),(SUBS,subroutines()[0]),(ks_a.CODE,ks_a.code()),(ks_b.CODE,ks_b.code()),
               (HOOK,struct.pack('<I',(3<<26)|(CODE>>2)))])
     return list(dict(pieces).items())
@@ -771,9 +776,15 @@ class GuestLoadingScreen:
                 with self._ahead_lock:
                     if self._ahead_context==context:self._ahead[key]=(layers,packets)
 
-    def show_picture(self,canvas,surface='menu',client=None):
+    def show_picture(self,canvas,surface='menu',client=None,*,transparent_key=None):
         with self.lock:
-            self.surface=SURFACES[surface];self._publish((gif_packet(picture_rectangles(canvas)),b'',b''))
+            # Small native-menu additions can be drawn over the original scene
+            # without replacing its artwork.  The keyed path emits only the
+            # panel's pixels; the normal modal-cover path remains byte-for-byte
+            # unchanged for existing callers.
+            rectangles=(image_rectangles(canvas,key=tuple(transparent_key))
+                        if transparent_key is not None else picture_rectangles(canvas))
+            self.surface=SURFACES[surface];self._publish((gif_packet(rectangles),b'',b''))
             self.key=None;self.layers=None
             return self._show(client)
 

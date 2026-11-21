@@ -463,9 +463,6 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     builders.append(lambda r: rush_cinematics.build_memory(r, enabled=preferences['rush_cinematics']))
     import lockoff_target
     builders.append(lambda r: lockoff_target.build_memory(r,settings=preferences,source=source))
-    # Hooks lock-off's INPUT/APPLY entries; all-legacy settings add nothing.
-    import lockon_select
-    builders.append(lambda r: lockon_select.build_memory(r,settings=preferences,source=source))
     if mission is not None:
         import story_runtime
         if training or battle_mode != 'teams':
@@ -479,8 +476,6 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
             import gauntlet_runtime
             builders.append(lambda r: gauntlet_runtime.build_memory(r,run=gauntlet,source=source))
     # Wraps those entries, the damage accumulator and the overhead-bar call again, so it is the last builder.
-    import lockon_threat
-    builders.append(lambda r: lockon_threat.build_memory(r,settings=preferences,source=source))
     import revive_targeting
     builders.append(lambda r: revive_targeting.build_memory(r,settings=preferences,source=source))
     import fusion_buffs
@@ -488,7 +483,7 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     # The optional native HUD style re-points the classic draw calls installed above, so it is the last builder.
     import native_hud_style
     builders.append(lambda r: native_hud_style.build_memory(r,settings=preferences,source=source))
-    if (SERIAL=='SLUS-21678' and battle_mode=='coop'
+    if (SERIAL=='SLUS-21678' and battle_mode=='coop' and len(ram)>=0x333bc4
             and struct.unpack_from('<I',ram,0x331dd0)[0]==1):
         import history_coop_health
         builders.append(lambda r: history_coop_health.build_memory(r,source=source,present_mask=present_mask,
@@ -499,6 +494,12 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
         if struct.unpack_from('<I',ram,0x333bc0)[0]==0 and present_mask==7:
             import history_story_roles
             builders.append(lambda r: history_story_roles.build_memory(r,source=source))
+    import lockon_threat
+    # Hook lock-off last so story adapters and all preceding builders are visible,
+    # then let the threat overlay wrap the final draw path.
+    import lockon_select
+    builders.append(lambda r: lockon_select.build_memory(r,settings=preferences,source=source))
+    builders.append(lambda r: lockon_threat.build_memory(r,settings=preferences,source=source))
     import localization
     localization.pin_battle(preferences)
     with localization.using(preferences):
@@ -571,7 +572,7 @@ def warm_preparation(settings, battle_mode):
 
 
 class Session:
-    def __init__(self, mode='Original', progress=None, play_intro=False, settings=None, battle_mode='teams', humans=1, assignment=None, prepared_root=None):
+    def __init__(self, mode='Original', progress=None, play_intro=False, settings=None, battle_mode='teams', humans=1, assignment=None, prepared_root=None, history_coop=False):
         if mode not in ('Original', 'Player', 'Cpu', 'TwoPlayer'): raise ValueError('Unknown controller mode')
         # Snapshot once, before claiming files or touching the emulator. An
         # edit in the settings window applies to the next prepared match.
@@ -586,9 +587,15 @@ class Session:
                      else 'Cpu' if humans==0
                      else 'Player' if battle_mode in ('ffa','training') else mode)
         self.battle_mode,self.humans=battle_mode,humans
+        self.history_coop=bool(history_coop)
+        if self.history_coop and (SERIAL!='SLUS-21678' or battle_mode!='coop' or humans!=2):
+            raise ValueError('Dragon History co-op currently requires BT3 USA and two local players')
         self.assignment=None if assignment is None else battle_mode_policy.human_seats(battle_mode,humans,assignment=assignment)
         self.progress_callback = progress
-        self.play_intro = bool(play_intro)
+        # Dragon History owns its own cinematic/leader dialogue phases. The
+        # separate Tag Team introduction expects the native Duel phase table,
+        # which story battles do not expose; keep the stock story flow there.
+        self.play_intro = bool(play_intro) and not self.history_coop
         self.prepared = ROOT/'analysis/prepared-states' if prepared_root is None else Path(prepared_root)
         self.prepared.mkdir(parents=True, exist_ok=True)
         self.lock = acquire_lock(self.prepared/'.trainer.lock')
@@ -602,7 +609,8 @@ class Session:
         try:
             self.run.mkdir()
             self.reserve_slots()
-            write_json(self.run/'session.json', dict(mode=mode, settings=self.settings, slots=[s for s,_ in self.slots],
+            write_json(self.run/'session.json', dict(mode=mode, battle_mode=battle_mode, humans=humans,
+                                                   history_coop=self.history_coop, settings=self.settings, slots=[s for s,_ in self.slots],
                                                    status='preparing'))
         except BaseException:
             self.close(); raise
@@ -876,11 +884,16 @@ class Session:
         ram = self.snapshot('original-selected-match', require_running=False)
         import story_missions
         mission=story_missions.armed() if self.battle_mode == 'teams' else None
-        minimum_members=2 if mission is not None or battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) else 1
+        minimum_members=2 if self.history_coop or mission is not None or battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) else 1
         selection = capture(ram,minimum_members=minimum_members)
         if mission is not None:
             import story_runtime
             mission=story_runtime.validate_selection(mission,selection,ram,self.humans,self.assignment)
+        if self.history_coop:
+            import history_story_roles
+            story_swap_hold=history_story_roles.defer_memory(ram,source=self.source)
+        else:
+            story_swap_hold=None
         import gauntlet_mode
         gauntlet=gauntlet_mode.armed(mission)
         if gauntlet is not None:
@@ -895,7 +908,15 @@ class Session:
             raise ValueError(f'Select up to {battle_mode_policy.TEAM_CAPACITY} fighters on each team, with at least one extra fighter')
         capture_path = write_json(self.run/'selection.json', selection)
         self.progress('Loading fighters', 1)
-        self.install(fresh_memory.build(self.source), 'memory', require_running=False)
+        memory_manifest=fresh_memory.build(self.source)
+        if story_swap_hold is not None:
+            # Both patches must be committed under the same acknowledged native
+            # hold. Installing the temporary story hook separately resumes that
+            # hold before fresh_memory can install, leaving Dragon History to
+            # start as a normal one-player fight.
+            memory_manifest=merge_manifests(memory_manifest,story_swap_hold)
+            print('Dragon History: native member swaps held until both cooperative fighters are ready.',flush=True)
+        self.install(memory_manifest, 'memory', require_running=False)
         self.wait_running()
         self.wait_word(fresh_memory.CONTROL, 20, 'Preparing expanded game memory...')
         self.wait_idle_leaders()
@@ -992,6 +1013,7 @@ class Session:
                 # must not tear down its healthy reload/camera services.
                 print(f'Warning: match started, but the queued story mission could not be cleared: {error}',flush=True)
         status = dict(mode=self.mode, battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment,
+                      history_coop=self.history_coop,
             settings=self.settings, slots=[s for s,_ in self.slots],
             status='active', playable_state=None if getattr(self,'rematch_unavailable',None) else str(self.source))
         if getattr(self,'rematch_unavailable',None):status['rematch_unavailable']=self.rematch_unavailable

@@ -1,8 +1,4 @@
-"""Apresentação local com desenho próprio e retratos extraídos da ISO.
-
-Nenhuma imagem ou identidade visual fornecida pelo Tag Team Mod é carregada.
-As fontes usadas no Windows pertencem ao sistema operacional.
-"""
+"""Apresentação Tenkaichi Together com arte original e créditos ao Tag Team Mod."""
 from pathlib import Path
 from functools import lru_cache
 from PIL import Image, ImageDraw
@@ -61,17 +57,22 @@ def footer(image, primary='Detalhes', secondary='Voltar', detail=''):
     draw.line((18,y,image.width-18,y),fill=(59,103,144))
     for x,glyph,text in ((22,'X',primary),(179,'△',secondary)):
         draw.ellipse((x,y+12,x+20,y+32),fill=(30,72,112),outline=(120,166,206))
-        draw.text((x+5,y+14),glyph,font=font(12,True),fill=WHITE)
+        if glyph=='X':
+            draw.line((x+6,y+18,x+14,y+26),fill=WHITE,width=2)
+            draw.line((x+6,y+26,x+14,y+18),fill=WHITE,width=2)
+        else:
+            draw.line(((x+10,y+16),(x+5,y+26),(x+15,y+26),(x+10,y+16)),fill=WHITE,width=2)
         label(draw,text,(x+27,y+14),123,12,True)
     label(draw,detail,(23,y+36),image.width-46,10,fill=DIM)
 
 
 @lru_cache(maxsize=1)
 def menu_palette():
-    # Paleta de 16 cores: reserva tons de pele/roupa para os retratos originais.
-    colors=((8,31,65),(11,43,78),(17,76,137),(24,98,166),(37,115,177),
-            GOLD,WHITE,DIM,(61,116,164),(14,14,22),(238,183,135),(165,101,63),
-            (233,98,30),(101,177,81),(180,42,49),(130,148,166))
+    # Paleta PSMT4 de 16 cores: tons marinhos, energia quente e tons dos
+    # retratos originais da ISO. A quantização é deliberada para o GS do PS2.
+    colors=((6,20,39),(8,31,65),(11,43,78),(17,76,137),(24,98,166),
+            (37,115,177),GOLD,WHITE,DIM,(61,116,164),(238,183,135),
+            (165,101,63),(233,98,30),(101,177,81),(180,42,49),(130,148,166))
     palette=Image.new('P',(1,1))
     palette.putpalette([c for rgb in colors for c in rgb]*16)
     return palette
@@ -164,41 +165,49 @@ def scenario_browser(controller):
 def backdrop(size=(512, 448)):
     width, height = size
     result = Image.new('RGB', size)
-    d = ImageDraw.Draw(result)
+    pixels=result.load()
     for y in range(height):
         f = y / max(1, height-1)
-        d.line((0, y, width, y), fill=(int(23-13*f), int(118-78*f), int(196-100*f)))
-    # Geometria desenhada nesta extensão: diagonais e faixas, sem sprites externos.
-    d.polygon([(0, 0), (width*.72, 0), (width*.28, height), (0, height)], fill=(24, 98, 166))
-    for x in range(-height, width, 62):
-        d.line((x, height, x+height, 0), fill=(37, 115, 177), width=2)
-    d.rectangle((0, 0, width-1, height-1), outline=GOLD, width=3)
+        for x in range(width):
+            glow=max(0.0,1.0-(((x-width*.78)/(width*.65))**2+((y-height*.20)/(height*.56))**2)**.5)
+            pixels[x,y]=(int(7+12*(1-f)+8*glow),int(25+45*(1-f)+47*glow),int(49+68*(1-f)+54*glow))
+    light=Image.new('RGBA',size,(0,0,0,0));d=ImageDraw.Draw(light)
+    # Facetas e rastros dão movimento à textura sem cobrir os textos e retratos.
+    d.polygon([(0,0),(width*.48,0),(width*.13,height*.56),(0,height*.76)],fill=(55,137,208,34))
+    d.polygon([(width,0),(width,height*.69),(width*.78,height*.49)],fill=(245,132,45,30))
+    for x in range(-height,width,height//4):
+        d.line((x,height,x+height,0),fill=(127,194,239,27),width=1)
+    for radius,alpha in ((height*.37,10),(height*.25,13),(height*.14,17)):
+        d.ellipse((width*.77-radius,height*.18-radius,width*.77+radius,height*.18+radius),
+                  outline=(255,193,54,alpha),width=2)
+    result=Image.alpha_composite(result.convert('RGBA'),light).convert('RGB')
+    d=ImageDraw.Draw(result)
+    d.line((0,height*.78,width,height*.58),fill=(14,49,83),width=2)
+    d.rectangle((0,0,width-1,height-1),outline=GOLD,width=2)
     return result
 
 
 def credits():
-    """Own FullCoop credit layout; the technical base is attributed in text."""
+    """Tela de créditos da extensão, com logo upstream e autoria em destaque."""
     image=backdrop()
     draw=ImageDraw.Draw(image)
-    heading(image,'TENKAICHI TOGETHER','BT3 · Créditos')
-    panel(draw,(18,78,494,184),selected=True)
-    label(draw,'PROJETO, DIREÇÃO E IDEALIZAÇÃO',(34,91),440,11,True,fill=DIM)
-    label(draw,'KawEduh',(32,112),280,33,True,fill=GOLD)
-    label(draw,'Cooperativo local · Dragon History',(35,158),420,12)
-    # Only portraits extracted from the selected original disc are admitted.
-    for cid,x in ((0,355),(22,419)):
-        pic=portrait(cid)
-        if pic is not None:
-            pic=pic.resize((62,62),Image.Resampling.NEAREST)
-            image.paste(pic,(x,109),pic)
-    panel(draw,(18,198,494,289))
-    label(draw,'BASE TÉCNICA',(34,209),440,11,True,fill=DIM)
-    label(draw,'Tag Team Mod',(32,228),440,23,True)
-    label(draw,'tehmufti e colaboradores · código GPL-3.0',(34,263),440,12,fill=GOLD)
-    panel(draw,(18,303,494,377))
-    label(draw,'JOGO ORIGINAL',(34,312),440,11,True,fill=DIM)
-    label(draw,'Dragon Ball Z: Budokai Tenkaichi 3',(34,332),440,16,True)
-    label(draw,'Créditos originais preservados no jogo.',(34,356),440,11)
+    heading(image,'CRÉDITOS','TENKAICHI TOGETHER · extensão do Tag Team Mod')
+    draw=ImageDraw.Draw(image)
+    draw.rounded_rectangle((18,73,494,265),radius=12,fill=(8,29,52),outline=(235,171,53),width=2)
+    logo=_tag_team_logo()
+    if logo is not None:
+        logo.thumbnail((390,176),Image.Resampling.LANCZOS)
+        image.paste(logo,((512-logo.width)//2,79),logo)
+    panel(draw,(18,274,494,384),selected=True)
+    label(draw,'EXTENSÃO, PROJETO E DIREÇÃO',(33,284),445,10,True,fill=DIM)
+    label(draw,'KawEduh',(32,301),205,27,True,fill=GOLD)
+    label(draw,'Coop local para Dragon History',(34,336),210,10)
+    draw.line((255,289,255,370),fill=(61,116,164),width=1)
+    label(draw,'BASE TÉCNICA',(271,284),205,10,True,fill=DIM)
+    label(draw,'Tag Team Mod',(270,302),205,17,True)
+    label(draw,'tehmufti e colaboradores',(271,326),205,10,fill=GOLD)
+    label(draw,'GPL-3.0 · código derivado',(271,341),205,9,fill=WHITE)
+    label(draw,'Projeto original no GitHub · tehmufti',(271,358),210,8,fill=DIM)
     draw.rectangle((3,392,508,444),fill=(8,31,65))
     draw.line((18,392,494,392),fill=GOLD,width=2)
     draw.ellipse((22,403,42,423),fill=(30,72,112),outline=DIM)
@@ -207,7 +216,7 @@ def credits():
     draw.ellipse((47,403,67,423),fill=(30,72,112),outline=DIM)
     draw.line((57,408,51,418,63,418,57,408),fill=WHITE,width=1)
     label(draw,'Voltar',(76,405),170,14,True)
-    label(draw,'Um projeto de KawEduh',(269,409),220,11,fill=DIM)
+    label(draw,'Extensão independente · não oficial',(265,409),226,10,fill=DIM)
     return image.quantize(palette=menu_palette(),dither=Image.Dither.NONE).convert('RGB')
 
 
@@ -268,8 +277,41 @@ def compose(teams, progress, message, mode='teams', humans=2, error=None):
 
 
 def transition():
-    image = backdrop((768, 576))
+    image = _extension_backdrop((768,576))
     d = ImageDraw.Draw(image)
-    centred(d, 'BUDOKAI TENKAICHI 3', 242, fonts.truetype('sans-bold', 40), width=768)
-    centred(d, 'CARREGANDO', 312, fonts.truetype('sans-bold', 20), width=768, fill=GOLD)
+    logo=_tag_team_logo()
+    if logo is not None:
+        logo.thumbnail((570,405),Image.Resampling.LANCZOS)
+        image.paste(logo,((768-logo.width)//2,32),logo)
+    d.rounded_rectangle((95,456,673,544),radius=16,fill=(7,23,43),outline=(255,193,54),width=2)
+    centred(d,'TENKAICHI TOGETHER · EXTENSÃO COOPERATIVA',468,
+            fonts.truetype('sans-bold',20),width=768,fill=WHITE)
+    centred(d,'Por KawEduh  ·  Base técnica: Tag Team Mod',506,
+            fonts.truetype('sans',15),width=768,fill=GOLD)
+    return image
+
+
+def _tag_team_logo():
+    path=Path(__file__).resolve().parents[1]/'Tag Team Mod Logo.png'
+    try:
+        with Image.open(path) as source:return source.convert('RGBA')
+    except OSError:
+        return None
+
+
+def _extension_backdrop(size):
+    width,height=size
+    image=Image.new('RGB',size)
+    px=image.load()
+    for y in range(height):
+        t=y/max(1,height-1)
+        color=(int(8+15*(1-t)),int(25+45*(1-t)),int(49+77*(1-t)))
+        for x in range(width):px[x,y]=color
+    glow=Image.new('RGBA',size,(0,0,0,0));g=ImageDraw.Draw(glow)
+    for radius,alpha in ((255,10),(200,13),(145,17),(92,21)):
+        g.ellipse((width*.67-radius,height*.34-radius,width*.67+radius,height*.34+radius),
+                  fill=(248,121,34,alpha))
+    for x in range(-height,width,height//3):
+        g.line((x,height,x+height,0),fill=(89,168,229,24),width=2)
+    image=Image.alpha_composite(image.convert('RGBA'),glow).convert('RGB')
     return image

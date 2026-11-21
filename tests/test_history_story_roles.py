@@ -27,6 +27,7 @@ class EE:
                 following=pc+8
             if op==15:self.r[rt]=imm<<16
             elif op==13:self.r[rt]=self.r[rs]|imm
+            elif op==14:self.r[rt]=self.r[rs]^imm
             elif op==12:self.r[rt]=self.r[rs]&imm
             elif op==9:self.r[rt]=(self.r[rs]+signed)&0xffffffff
             elif op==11:self.r[rt]=int(self.r[rs]<(signed&0xffffffff))
@@ -48,6 +49,7 @@ class EE:
                 elif fn==0x12:self.r[rd]=self.lo
                 elif fn in (0x21,0x2d):self.r[rd]=(self.r[rs]+self.r[rt])&0xffffffff
                 elif fn==0x24:self.r[rd]=self.r[rs]&self.r[rt]
+                elif fn==0x25:self.r[rd]=self.r[rs]|self.r[rt]
                 elif fn==0x27:self.r[rd]=~(self.r[rs]|self.r[rt])&0xffffffff
                 elif fn==0x2b:self.r[rd]=int(self.r[rs]<self.r[rt])
                 else:raise AssertionError(hex(word))
@@ -99,6 +101,20 @@ class StoryRoleTests(unittest.TestCase):
     def test_other_native_modes_are_unchanged(self):
         self.memory[0x331dd0]=0
         _,exit_at=self.change();self.assertEqual(exit_at,roles.TRAMP0)
+
+    def test_preparation_defers_authored_swap_only_for_armed_history_coop(self):
+        import native_preparation as prep
+        self.memory.update({prep.CONTROL:prep.MAGIC,prep.ACCEPTED_MODE:1,0x331dd0:1})
+        code=roles.defer_code()
+        cpu=EE([(roles.DEFER,code)],self.memory)
+        self.assertEqual(cpu.run(roles.DEFER,0,1),0x100000)
+        self.assertEqual(cpu.r[2],0)
+        for address,value in ((prep.ACCEPTED_MODE,0),(0x331dd0,0),(prep.CONTROL,0)):
+            with self.subTest(address=address,value=value):
+                self.memory[address]=value
+                cpu=EE([(roles.DEFER,code)],self.memory)
+                self.assertEqual(cpu.run(roles.DEFER,0,1),roles.DEFER_TRAMP)
+        self.memory.update({prep.CONTROL:prep.MAGIC,prep.ACCEPTED_MODE:1,0x331dd0:1})
 
     def detect(self,label=10001):
         request=0x334464

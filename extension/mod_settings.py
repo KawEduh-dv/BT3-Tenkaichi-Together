@@ -103,7 +103,7 @@ DEFAULTS = {'version': VERSION, MODE_KEY: 'all', ULTIMATE_KEY: False,
             NPC_OVERRIDES_KEY: {}, CORPSE_SAFETY_KEY: True,
             REVIVE_KEY: False, REVIVE_COST_KEY: 4, REVIVE_CHANNEL_KEY: 4.0}
 DEFAULTS.update(feature_preferences.DEFAULTS)
-DEFAULTS.update(history_ally_hp_percent=100, history_enemy_hp_percent=150)
+DEFAULTS.update(history_ally_hp_percent=125, history_enemy_hp_percent=150)
 
 # Settings pages, in order: (English group name, keys in display order). Every
 # editable key belongs to exactly one page. Keep 'Menus' first and the names
@@ -203,6 +203,9 @@ def validate_settings(settings, defaults=None):
     if type(settings) is not dict or not _json_value(settings):
         raise ValueError('Mod settings must be a JSON object with finite JSON values.')
     result = copy.deepcopy(settings)
+    result.setdefault('fullcoop_interface',True)
+    if type(result['fullcoop_interface']) is not bool:
+        raise ValueError('fullcoop_interface must be a Boolean.')
     for key in ('history_ally_hp_percent', 'history_enemy_hp_percent'):
         result.setdefault(key, DEFAULTS[key])
         if type(result[key]) is not int or not 25 <= result[key] <= 400:
@@ -613,7 +616,7 @@ def show_npc_character_ui(parent, overrides):
 def ui_fields():
     """Every active preference has one editable control, in page order."""
     rows = {
-        'history_ally_hp_percent': (100,'int',25,400,'História cooperativa','Vida dos aliados (%)'),
+        'history_ally_hp_percent': (125,'int',25,400,'História cooperativa','Vida dos aliados (%)'),
         'history_enemy_hp_percent': (150,'int',25,400,'História cooperativa','Vida dos inimigos (%)'),
         MODE_KEY: ('all','choice',MODES,None,'Cinematics','Special-move pause'),
         ULTIMATE_KEY: (False,'bool',None,None,'Cinematics','Ultimate attacks: shared camera and pause'),

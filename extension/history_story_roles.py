@@ -11,6 +11,7 @@ import fresh_team_combat as core
 
 BASE,PHYSICAL,CHANGE0,CHANGE1,TRAMP0,TRAMP1,CONTROL,END=(
     0x06984000,0x06984000,0x06985000,0x06985800,0x06986000,0x06986100,0x06987000,0x06988000)
+DEFER,DEFER_TRAMP=END,END+0x800
 MAGIC=0x48535231
 ENTRIES=(0x20ad50,)
 FIND,PROMPT,R3,TRAMP_PROMPT=BASE+0x2400,BASE+0x2800,BASE+0x2c00,BASE+0x2200
@@ -174,12 +175,63 @@ def build_memory(ram, *, source='<story-role-probe>'):
     pieces.extend(((STOP,stop_code(u(core.MODE+4),u(part.PRESENT))),
         (TRAMP_STOP,original+struct.pack('<2I',(2<<26)|(0x20a2e8>>2),0)),
         (0x20a2e0,struct.pack('<2I',(2<<26)|(STOP>>2),0))))
+    deferred=defer_memory(ram,validate=False)
     for entry,wrapper,trampoline in zip(ENTRIES,(CHANGE0,CHANGE1),(TRAMP0,TRAMP1)):
         original=read(entry,8)
-        if ram[entry:entry+8]!=original:raise ValueError('Native ChangeMember prologue changed')
+        if ram[entry:entry+8]==original:
+            pass
+        elif entry==ENTRIES[0] and ram[entry:entry+8]==deferred['entry'] and \
+                ram[DEFER:DEFER+len(deferred['code'])]==deferred['code'] and \
+                ram[DEFER_TRAMP:DEFER_TRAMP+len(deferred['trampoline'])]==deferred['trampoline']:
+            # The temporary history-only hold prevents an authored ChangeMember
+            # from replacing Goku while the second body is still being loaded.
+            # Replace it atomically with the full role adapter before releasing
+            # the first playable frame.
+            pieces.extend(((DEFER,b'\0'*len(deferred['code'])),
+                           (DEFER_TRAMP,b'\0'*len(deferred['trampoline']))))
+        else:raise ValueError('Native ChangeMember prologue changed')
         pieces.extend(((trampoline,original+struct.pack('<2I',(2<<26)|((entry+8)>>2),0)),
                        (wrapper,change_code(wrapper,trampoline)),
                        (entry,struct.pack('<2I',(2<<26)|(wrapper>>2),0))))
     return dict(serial='SLUS-21678',crc='428113C2',source=str(source),blocks=[
         dict(address=address,expected_hex=ram[address:address+len(data)].hex(),data_hex=data.hex())
         for address,data in pieces])
+
+
+def defer_code(address=DEFER):
+    """Hold authored member swaps only while a Dragon History co-op is being prepared.
+
+    The complete story role adapter replaces this hook before the loading gate
+    releases. Returning the native 'already active' result leaves the authored
+    event pending for that adapter and prevents the leader model from changing
+    while resources and the second body are created.
+    """
+    import native_preparation as prep
+    a=Assembler(address);a.li(8,prep.CONTROL);a.lw(9,8);a.li(10,prep.MAGIC)
+    a.branch(5,9,10,'native')
+    a.li(8,prep.ACCEPTED_MODE);a.lw(8,8);a.addiu(9,0,1);a.branch(5,8,9,'native')
+    a.li(8,A(0x331DD0));a.lw(8,8);a.addiu(9,0,1);a.branch(5,8,9,'native')
+    a.move(2,0);a.jr()
+    a.label('native');a.jump(DEFER_TRAMP)
+    return a.finish()
+
+
+def defer_memory(ram, *, source='<history-coop-prepare>', validate=True):
+    """Patch ChangeMember before resource loading, confined to the armed history mode."""
+    import native_preparation as prep
+    entry=ENTRIES[0]
+    original=elf_reader(elf_path(ROOT))[2](entry,8)
+    code=defer_code()
+    trampoline=original+struct.pack('<2I',(2<<26)|((entry+8)>>2),0)
+    if len(ram)!=0x8000000:raise ValueError('Story swap hold needs a full EE RAM snapshot')
+    if validate:
+        if ram[entry:entry+8]!=original:raise ValueError('Native ChangeMember prologue changed before history preparation')
+        if any(ram[DEFER:DEFER+0x1000]):raise ValueError('Temporary story swap reservation is occupied')
+        if ram[prep.CONTROL:prep.CONTROL+4]!=struct.pack('<I',prep.MAGIC):
+            raise ValueError('The Dragon History preparation gate is not armed')
+        if struct.unpack_from('<I',ram,prep.ACCEPTED_MODE)[0]!=1 or struct.unpack_from('<I',ram,A(0x331DD0))[0]!=1:
+            raise ValueError('The native Dragon History co-op mode is not selected')
+    blocks=[(DEFER,code),(DEFER_TRAMP,trampoline),(entry,struct.pack('<2I',(2<<26)|(DEFER>>2),0))]
+    return dict(serial='SLUS-21678',crc='428113C2',source=str(source),
+        blocks=[dict(address=address,expected_hex=ram[address:address+len(data)].hex(),data_hex=data.hex())
+                for address,data in blocks],entry=blocks[2][1],code=code,trampoline=trampoline)

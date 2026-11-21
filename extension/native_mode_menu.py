@@ -24,6 +24,7 @@ import player_slot_labels
 import scenario_menu
 import tag_tournament
 import gauntlet_mode
+import history_setup_menu
 
 CODE,OFF,ON,CONTROL,END=0x07690000,0x076A0000,0x076C1000,0x076FF000,0x07700000
 ALT_OFF,ALT_ON=0x06C40000,0x06C61000
@@ -55,6 +56,7 @@ def owned_atlases(a,fail,tag):
 def payload():
     a=Assembler(CODE);services.save(a)
     a.call(controller_assignment.CODE)
+    a.call(history_setup_menu.CODE);a.branch(5,2,0,'return')
     # Under the watcher's owned loading cover (guest_loading_screen.OWNED: the Tag Team Tournament transitions)
     # nothing reaches the game or a modded page: both ports' raw and translated words are withheld while it lasts.
     import guest_loading_screen as cover
@@ -301,7 +303,7 @@ def prepare(ram,settings=None):
 @lru_cache(maxsize=1)
 def code_pieces():
     """Include AFTER old.code_pieces in cold-boot/checkpoint construction."""
-    return [(CODE,payload()),(old.HOOK,hook())]+services.code_pieces()+roster_selection_guard.code_pieces()+coop_character_select.code_pieces()+cpu_difficulty_select.code_pieces()+ingame_settings.code_pieces()+team_assignment.code_pieces()+controller_assignment.code_pieces()+player_slot_labels.pieces()+scenario_menu.code_pieces()
+    return [(CODE,payload()),(old.HOOK,hook())]+services.code_pieces()+roster_selection_guard.code_pieces()+coop_character_select.code_pieces()+cpu_difficulty_select.code_pieces()+ingame_settings.code_pieces()+team_assignment.code_pieces()+controller_assignment.code_pieces()+player_slot_labels.pieces()+scenario_menu.code_pieces()+history_setup_menu.code_pieces()
 
 
 class ReadOnlyMemory:
@@ -349,7 +351,29 @@ def ready(p):
     manager=p.read_u32(old.SCENE_MANAGER)
     if not 0x100000<=manager<0x1FFF000 or p.read_u32(manager+0x18)!=4:return False
     obj=p.read_u32(old.MAIN_OBJECT)
-    return 0x100000<=obj<0x1FFF000
+    if not 0x100000<=obj or obj+0x188>END:return False
+    # The scene can become "main" a few frames before the label tree is
+    # allocated. Treat that transition as not ready; inspecting the partial
+    # object used to turn a normal boot into a fatal pager error.
+    count=p.read_u32(obj+0x144)
+    tree=p.read_u32(obj+0x34)
+    if not 1<=count<=11 or not 0x100000<=tree or tree+8>END:return False
+    nodes=p.read_u32(tree)
+    node_count=p.read_u32(tree+4)
+    if not 0x100000<=nodes or nodes+node_count*assets.NODE_STRIDE>END or node_count!=72:return False
+    # The label tree can exist before its atlas/DMA pointers are populated.
+    # owned_plan() dereferences these while copying the original artwork, so
+    # validate every range first and keep an ordinary menu transition from
+    # being reported as a fatal pager fault.
+    for index in assets.LABEL_TABLE_INDICES.values():
+        descriptor=p.read_u32(obj+0x40+4*index)
+        if not 0x100000<=descriptor or descriptor+64>END:return False
+        pixel=p.read_u32(descriptor+0x38);palette=p.read_u32(descriptor+0x3C)
+        pixel_size=p.read_u32(descriptor+8);palette_size=p.read_u32(descriptor+12)
+        if (pixel_size,palette_size)!=(0x20080,0x480):return False
+        if (not 0x100000<=pixel or pixel+pixel_size>END or
+                not 0x100000<=palette or palette+palette_size>END):return False
+    return True
 
 
 class Controller:
@@ -363,6 +387,7 @@ class Controller:
         self.custom_match=False;self.pending_return_page=None
         self.fast=False      # the gauntlet picker page is shown: the watcher polls quickly (gauntlet_mode.Pager)
         self.settings_menu=ingame_settings.Controller()
+        self.history_setup=history_setup_menu.Controller(self.settings)
         self.team_menu=team_assignment.Controller()
         self.tournament=tag_tournament.Controller()
         self.gauntlet=gauntlet_mode.Controller()
@@ -404,6 +429,15 @@ class Controller:
         if self.closed:return None
         self.scenarios.settings=self.settings
         self.scenarios.checkpoint_ready=checkpoint_ready
+        # Dragon History is entered through the game's own story menus, not
+        # the Modded Modes pager. Own scene 6 there and return the player's
+        # choice to the watcher without changing the native chapter selection.
+        history=self.history_setup.tick(p)
+        if history is not None:
+            self.mode,self.humans=history['mode'],history['humans']
+            self.custom_match=history['humans']==2
+            self.history_config=dict(history.get('health',{}))
+            return history
         if self.scenarios.tick(p):return None
         if self.scenarios.failed:
             self.custom_match=False;self.scenarios.failed=False
@@ -515,6 +549,11 @@ class Controller:
         # The guest restores ownership itself after at most 180 pad updates;
         # no detached process or fresh emulator connection is created here.
         self.team_menu.shutdown()
+        if self.history_setup.active:
+            try:
+                from pine import PineClient
+                with PineClient(timeout=2) as p:self.history_setup.close(p,drain=False)
+            except Exception:pass
         self.tournament.panel.shutdown()
         self.scenarios.shutdown()
         self.closed=True;self.active=False

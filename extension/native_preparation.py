@@ -4,7 +4,7 @@ PINE publishes data packets only. The EE validates every old byte before it
 executes any patch writes, while both combat dispatches are held. Native GS,
 disc IO and the loading animation continue running. No stage loads a state.
 """
-from native_map import A, elf_path
+from native_map import A, SERIAL, elf_path
 import struct
 import time
 from prototype import Assembler, ROOT, elf_reader
@@ -38,14 +38,14 @@ def restore(a):
     a.addiu(29, 29, STACK)
 
 
-def gate_code(heal_any_substate=True, accepted_mode_word=True, skip_stage_intro=True, *, history=False):
+def gate_code(heal_any_substate=True, accepted_mode_word=True, skip_stage_intro=True, *, history=False,address=GATE):
     """heal_any_substate=False emits the beta.35/36 gate (previous_gate_images), which rewrote only phase-1
     substates below 4. accepted_mode_word=False emits the gates before the Tag Team Tournament, which compared the
     battle mode with a constant 0 (the same two words as the ACCEPTED_MODE load and its nop). skip_stage_intro=False
     emits the gate before Oct 19, which let the duel's phase-0 stage shots play out under the mod's loading cover."""
     import extra_reload_quiet as reload_job
     import guest_loading_screen as cover
-    a=Assembler(GATE)
+    a=Assembler(address)
     # Keep the native predecessor's result/register behavior exactly.
     a.addiu(29,29,-16);a.i(63,31,29,0);a.call(NATIVE)
     a.i(55,31,29,0);a.addiu(29,29,16)
@@ -184,8 +184,15 @@ def service_code(*, legacy_block_limit=False, history=False):
     a.lw(8,16,16);a.branch(4,8,0,'scope_error')
     a.lw(8,16,20);a.branch(4,8,0,'done') # wait until dispatch has stopped
     a.li(8,A(0x2FEB14));a.lw(8,8);a.lw(9,16,24);a.branch(5,8,9,'scope_error')
-    a.li(8,A(0x3337C0));a.lw(8,8);a.addiu(9,0,0 if history else 1);a.branch(5,8,9,'scope_error')
-    if history:
+    a.li(8,A(0x3337C0));a.lw(8,8)
+    if history=='dynamic':
+        a.addiu(9,0,1);a.branch(4,8,9,'loop_ready');a.branch(5,8,0,'scope_error')
+        a.lw(8,16,64);a.addiu(9,0,1);a.branch(5,8,9,'scope_error')
+        a.li(8,A(0x331DD0));a.lw(8,8);a.branch(5,8,9,'scope_error')
+        a.label('loop_ready')
+    else:
+        a.addiu(9,0,0 if history else 1);a.branch(5,8,9,'scope_error')
+    if history is True:
         a.li(8,A(0x331DD0));a.lw(8,8);a.addiu(9,0,1);a.branch(5,8,9,'scope_error')
     a.lw(18,16,28);a.addiu(8,18,-1)
     if legacy_block_limit:a.i(11,8,8,1024)
@@ -274,6 +281,36 @@ def code_pieces(*, history=False):
     return [(CODE,service_code(history=history)),(GATE,gate_code(history=history)),(HOOK,HOOK_WORD)]
 
 
+def dynamic_gate_code():
+    """Choose the reviewed gate without rewriting executing guest code.
+
+    Mode 1 is an explicit story opt-in; every other accepted mode keeps the
+    existing Duel/Tournament gate. The dispatcher preserves its input state.
+    """
+    duel,story=GATE+0x100,GATE+0x1000
+    a=Assembler(GATE);a.addiu(29,29,-16);a.i(63,8,29,0);a.i(63,9,29,8)
+    a.li(8,ACCEPTED_MODE);a.lw(8,8);a.addiu(9,0,1);a.branch(4,8,9,'story')
+    a.i(55,8,29,0);a.i(55,9,29,8);a.addiu(29,29,16);a.jump(duel)
+    a.label('story');a.i(55,8,29,0);a.i(55,9,29,8);a.addiu(29,29,16);a.jump(story)
+    result=bytearray(a.finish());assert len(result)<=0x100
+    result.extend(bytes(0x100-len(result)));result.extend(gate_code(address=duel))
+    assert len(result)<=0x1000
+    result.extend(bytes(0x1000-len(result)));result.extend(gate_code(history=True,address=story))
+    assert len(result)<0x2000;return bytes(result)
+
+
+def dynamic_code_pieces():
+    if SERIAL!='SLUS-21678' or A(0x2C6118)!=0x2C6118:raise ValueError('Dynamic story transport requires the USA executable')
+    return [(CODE,service_code(history='dynamic')),(GATE,dynamic_gate_code()),(HOOK,HOOK_WORD)]
+
+
+def transport_variants():
+    yield code_pieces()
+    if SERIAL=='SLUS-21678' and A(0x2C6118)==0x2C6118:
+        yield code_pieces(history=True)
+        yield dynamic_code_pieces()
+
+
 def previous_service_images():
     """Exact old 1,024-record validator for authenticated capture upgrades."""
     return (service_code(legacy_block_limit=True),)
@@ -282,8 +319,7 @@ def previous_service_images():
 def captured_transport(ram):
     """A captured 128 MiB image holds this build's transport, or the same one with a previous gate image
     (previous_gate_images). Live checks keep installed(): the boot pnach is always current there."""
-    if all(bytes(ram[addr:addr+len(data)])==data for addr,data in code_pieces(history=True)):
-        return True
+    if any(all(bytes(ram[p:p+len(data)])==data for p,data in pieces) for pieces in transport_variants()):return True
     for addr,data in code_pieces():
         accepted=(data,)
         if addr==CODE:
@@ -304,13 +340,14 @@ def upgrade_blocks(ram):
     if not captured_transport(ram):raise ValueError('Captured native preparation service changed')
     u=lambda p:struct.unpack_from('<I',ram,p)[0]
     if u(CONTROL+4)!=u(CONTROL+8):raise ValueError('Captured native preparation transaction is pending')
+    pieces=next((pieces for pieces in transport_variants()
+                 if all(ram[p:p+len(data)]==data for p,data in pieces)),code_pieces())
     return [dict(address=p,expected_hex=ram[p:p+len(data)].hex(),data_hex=data.hex())
-            for p,data in code_pieces() if ram[p:p+len(data)]!=data]
+            for p,data in pieces if ram[p:p+len(data)]!=data]
 
 
 def installed(p):
-    return any(all(p.read(addr,len(data))==data for addr,data in code_pieces(history=history))
-               for history in (False,True))
+    return any(all(p.read(addr,len(data))==data for addr,data in pieces) for pieces in transport_variants())
 
 
 def encode(manifest):
@@ -338,12 +375,15 @@ def encode(manifest):
     return bytes(packet),len(blocks)
 
 
-def arm(p, *, include_single_ffa=False):
+def arm(p, *, include_single_ffa=False, accepted_mode=None):
     if not installed(p):return False
     if p.read_u32(CONTROL)!=MAGIC:
         p.write(CONTROL,struct.pack('<16I',MAGIC,*([0]*15)))
     value=int(bool(include_single_ffa))
     if p.read_u32(INCLUDE_SINGLE_FFA)!=value:p.write_u32(INCLUDE_SINGLE_FFA,value)
+    if accepted_mode is not None:
+        if accepted_mode not in (0,1,4):raise ValueError('Unsupported battle mode for native preparation')
+        if p.read_u32(ACCEPTED_MODE)!=accepted_mode:p.write_u32(ACCEPTED_MODE,accepted_mode)
     p.write_u32(CONTROL+48,1)
     return True
 
@@ -351,7 +391,7 @@ def arm(p, *, include_single_ffa=False):
 def disarm(p):
     """Withdraw auto-capture without releasing any in-flight combat transaction."""
     if p.read_u32(CONTROL)!=MAGIC or not installed(p):return False
-    for address in (CONTROL+48, INCLUDE_SINGLE_FFA):
+    for address in (CONTROL+48, INCLUDE_SINGLE_FFA, ACCEPTED_MODE):
         if p.read_u32(address):p.write_u32(address,0)
     return True
 

@@ -1,8 +1,9 @@
-"""High-resolution menu transition logo in an immutable DMA-referenced texture.
+"""High-resolution, credited Tag Team Mod logo in a DMA-referenced texture.
 
 The 768px picture occupies a separate read-only EE reservation, outside heap1,
 the loading double buffers and injected programs. GS scratch is shared with
-the battle loading cover only while the menu is completely black. Re-upload
+the battle loading cover only while the menu is completely black. The upstream
+mark appears with Tenkaichi Together attribution in the composition. Re-upload
 each frame because the native menu also uses this VRAM between our draws.
 """
 from functools import lru_cache
@@ -20,7 +21,7 @@ MAGIC=0x54455831
 
 @lru_cache(maxsize=1)
 def picture():
-    # Visual próprio: não abre o logo nem qualquer arte do pacote upstream.
+    # The upstream logo is paired with the extension's original identity.
     from fullcoop_loading_art import transition
     result=transition().quantize(256,method=Image.Quantize.MEDIANCUT,dither=Image.Dither.NONE)
     # The DMA uploader requires all 256 palette entries even for one colour.
