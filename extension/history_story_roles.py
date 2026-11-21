@@ -17,6 +17,7 @@ ENTRIES=(0x20ad50,)
 FIND,PROMPT,R3,TRAMP_PROMPT=BASE+0x2400,BASE+0x2800,BASE+0x2c00,BASE+0x2200
 STOP,TRAMP_STOP=BASE+0x1800,BASE+0x2300
 EVENT_MAP=CONTROL+32
+SCRIPTED_SKILL_MAP=CONTROL+0x100
 REGS=tuple(range(8,16))
 
 
@@ -59,6 +60,15 @@ def change_code(address,trampoline):
     import team_participation as part
     a=Assembler(address);save(a);scope(a,'native')
     a.i(11,9,5,5);a.branch(4,9,0,'native')
+    # A story finisher pairs ChangeMember with an authored skill action. Keep
+    # that native member transition so the game applies the cinematic move's
+    # scripted damage and can latch the chapter result. Ordinary duplicate
+    # swaps still resolve to the living co-op body below.
+    a.li(9,0x333f10);a.lw(9,9);a.branch(4,9,0,'lookup')
+    a.lw(10,9,8);a.addiu(10,10,-10000);a.i(11,11,10,52);a.branch(4,11,0,'lookup')
+    a.li(12,SCRIPTED_SKILL_MAP);a.r(0,13,0,10,2);a.r(0x21,12,12,13);a.lw(13,12)
+    a.branch(5,13,0,'native')
+    a.label('lookup')
     a.li(9,core.MODE);a.lw(10,9,4);a.move(11,4)
     a.li(12,core.POINTERS);a.li(13,part.PRESENT);a.lw(14,13,4);a.lw(13,13)
     a.r(0x27,14,14,0);a.r(0x24,13,13,14)
@@ -157,14 +167,18 @@ def build_memory(ram, *, source='<story-role-probe>'):
     from history_script_metadata import loaded_events
     events=loaded_events(ram)
     event_map=[0xffffffff]*52
+    scripted_skill_map=[0]*52
     for label,event in events.items():
         if len(event['replacements'])==1:
             change=event['replacements'][0]
             event_map[label-10000]=change['side']*8+change['slot']
+            if any(command['kind']==1 and command['opcode']==1603 for command in event['commands']):
+                scripted_skill_map[label-10000]=1
     original=read(0x259d90,8)
     if ram[0x259d90:0x259d98]!=original or u(0x259cd0)!=((3<<26)|(0x129728>>2)):
         raise ValueError('Original story prompt and R3 call changed')
-    pieces.extend(((EVENT_MAP,struct.pack('<52I',*event_map)),(FIND,redundant_event_code()),
+    pieces.extend(((EVENT_MAP,struct.pack('<52I',*event_map)),
+        (SCRIPTED_SKILL_MAP,struct.pack('<52I',*scripted_skill_map)),(FIND,redundant_event_code()),
         (PROMPT,prompt_code(PROMPT,input_query=False)),(R3,prompt_code(R3,input_query=True)),
         (TRAMP_PROMPT,original+struct.pack('<2I',(2<<26)|(0x259d98>>2),0)),
         (0x259d90,struct.pack('<2I',(2<<26)|(PROMPT>>2),0)),

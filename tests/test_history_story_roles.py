@@ -91,6 +91,14 @@ class StoryRoleTests(unittest.TestCase):
         self.assertEqual(exit_at,roles.TRAMP0)
         self.assertEqual(cpu.mem[roles.CONTROL+8],self.goku)
 
+    def test_authored_skill_finisher_keeps_native_member_change(self):
+        request=0x1b0000
+        self.memory.update({0x333f10:request,request+8:10005,
+            roles.SCRIPTED_SKILL_MAP+5*4:1})
+        _,exit_at=self.change(1)
+        self.assertEqual(exit_at,roles.TRAMP0)
+        self.assertEqual(self.memory[roles.CONTROL+8],self.goku)
+
     def test_absent_defeated_and_consumed_partners_are_not_selected(self):
         for address,value in ((part.PRESENT,3),(part.CONSUMED,4),(self.piccolo+0x9e4+0xa4,0)):
             with self.subTest(address=address):
