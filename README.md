@@ -23,6 +23,7 @@ Esses resultados são testes locais de desenvolvimento; não equivalem à certif
 ## O que está sendo implementado
 
 - Ativação e continuação da campanha completa, preservando os eventos e os saves.
+- Confirmação no PCSX2 da tela de carregamento própria durante a entrada de Dragon History. O caminho para a cena de batalha já está coberto pelos testes offline; ainda falta validar essa imagem na próxima abertura do emulador.
 - R3 de troca somente quando existe um aliado na reserva. Um personagem já em combate não é um destino de troca.
 - Troca para o primeiro jogador que apertar; transformações sincronizadas quando aplicáveis.
 - Pergunta de 1 ou 2 jogadores ao entrar em Dragon History; dificuldade da IA, entradas individuais, em duplas ou simultâneas e inimigos por jogador.
