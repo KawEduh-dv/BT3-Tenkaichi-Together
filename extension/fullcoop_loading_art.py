@@ -242,6 +242,25 @@ def centred(draw, text, y, font, width=512, fill='white'):
               stroke_width=1, stroke_fill=(9, 30, 58))
 
 
+PREPARATION_LABELS = {
+    'Loading your selected fighters...': 'Carregando os lutadores escolhidos...',
+    'Getting your fighters ready...': 'Organizando os lutadores...',
+    'Preparing team battle': 'Organizando as equipes...',
+    'Preparing your match': 'Preparando a partida...',
+    'Loading fighters': 'Carregando os lutadores...',
+    'Preparing arena': 'Preparando a arena...',
+    'Getting ready': 'Finalizando os detalhes...',
+    'Preparing tag attacks': 'Preparando os ataques em equipe...',
+    'Starting your match...': 'Iniciando a luta...',
+}
+
+
+def preparation_label(message):
+    """Translate the live setup stage for the Portuguese loading artwork."""
+    text = str(message or '').strip()
+    return PREPARATION_LABELS.get(text, text or 'Preparando a batalha...')
+
+
 def compose(teams, progress, message, mode='teams', humans=2, error=None):
     image = backdrop()
     d = ImageDraw.Draw(image)
@@ -271,7 +290,7 @@ def compose(teams, progress, message, mode='teams', humans=2, error=None):
     if p:
         d.rounded_rectangle((32, 361, max(33, 32+448*p//100), 376), radius=4, fill=GOLD)
     centred(d, str(p)+'%', 386, fonts.truetype('sans-bold', 17))
-    text = ' / '.join(error) if error else 'Preparando a batalha...'
+    text = ' / '.join(error) if error else preparation_label(message)
     centred(d, text[:65], 419, fonts.truetype('sans', 12))
     return dict(background=image, foreground=None, lights=None)
 

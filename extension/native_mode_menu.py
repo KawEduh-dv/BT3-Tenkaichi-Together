@@ -347,6 +347,22 @@ def owned_plan(ram,settings=None):
     return blocks+native_menu_texture.plan(ram)+[(CONTROL,_control(ram,obj,atlases,settings))]
 
 
+def try_owned_plan(ram,settings=None):
+    """Return None when the native menu is between frames of construction.
+
+    ``ready()`` and ``owned_plan()`` read live EE memory in separate PINE
+    transactions. The game can replace its label tree between those reads, so
+    an otherwise-ready tree may contain a transient pointer outside RAM. Wait
+    for the next menu frame instead of taking down the mod pager.
+    """
+    try:
+        return owned_plan(ram,settings)
+    except ValueError as error:
+        if str(error) in ('Native menu address out of range','Invalid native menu asset pointer'):
+            return None
+        raise
+
+
 def ready(p):
     manager=p.read_u32(old.SCENE_MANAGER)
     if not 0x100000<=manager<0x1FFF000 or p.read_u32(manager+0x18)!=4:return False
@@ -525,7 +541,8 @@ class Controller:
         if not allow_activate:return None
         if self.pending_return_page is None and self.scenarios.quick_document() is not None:
             self.pending_return_page=0
-        plan=owned_plan(ReadOnlyMemory(p),self.settings)
+        plan=try_owned_plan(ReadOnlyMemory(p),self.settings)
+        if plan is None:return None
         # Assets are staged first. Publish magic last: PINE writes can span
         # multiple commands while guest frames run. No live code/object edits.
         if not ready(p):return None
