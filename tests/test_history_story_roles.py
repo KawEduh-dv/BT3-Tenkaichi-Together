@@ -91,13 +91,48 @@ class StoryRoleTests(unittest.TestCase):
         self.assertEqual(exit_at,roles.TRAMP0)
         self.assertEqual(cpu.mem[roles.CONTROL+8],self.goku)
 
-    def test_authored_skill_finisher_keeps_native_member_change(self):
+    def test_authored_skill_uses_the_living_character_already_controlled_by_p2(self):
         request=0x1b0000
-        self.memory.update({0x333f10:request,request+8:10005,
-            roles.SCRIPTED_SKILL_MAP+5*4:1})
+        self.memory.update({0x333f10:request,request+8:10005})
+        cpu,exit_at=self.change(1)
+        self.assertEqual(exit_at,0x100000)
+        self.assertEqual(cpu.mem[roles.CONTROL+8],self.piccolo)
+
+    def test_authored_skill_keeps_native_change_when_target_is_not_in_arena(self):
+        request=0x1b0000
+        self.memory.update({0x333f10:request,request+8:10005,part.PRESENT:1})
         _,exit_at=self.change(1)
         self.assertEqual(exit_at,roles.TRAMP0)
         self.assertEqual(self.memory[roles.CONTROL+8],self.goku)
+
+    def test_story_role_classifies_skills_inside_called_actions(self):
+        from history_script_metadata import flatten_action
+        action={'kind':1,'opcode':1603,'args':[]}
+        events={10005:{'commands':[{'kind':2,'opcode':9999,'args':[]}]},
+                9999:{'commands':[action]}}
+        self.assertEqual(flatten_action(events,10005),[action])
+
+    def test_story_event_map_finds_replacements_through_nested_calls(self):
+        change={'kind':1,'opcode':8,'args':[{'integer':17},{'integer':22}],
+                'address':0x1234}
+        skill={'kind':1,'opcode':1603,'args':[],'address':0x1238}
+        events={10002:{'commands':[{'kind':2,'opcode':9000,'args':[]}]},
+                9000:{'commands':[{'kind':3,'opcode':9001,'args':[]}]},
+                9001:{'commands':[change,skill]},
+                10003:{'commands':[{'kind':2,'opcode':9002,'args':[]}]},
+                9002:{'commands':[skill]}}
+        mapped=roles.story_event_map(events)
+        self.assertEqual(mapped[2],1) # side 0, reserve slot 1
+        self.assertEqual(mapped[3],0xffffffff) # a skill-only event is not a swap
+
+    def test_story_event_map_leaves_incomplete_or_ambiguous_graphs_native(self):
+        a={'kind':1,'opcode':8,'args':[{'integer':16},{'integer':1}], 'address':1}
+        b={'kind':1,'opcode':8,'args':[{'integer':17},{'integer':1}], 'address':2}
+        events={10000:{'commands':[{'kind':2,'opcode':9999,'args':[]}]},
+                10001:{'commands':[a,b]}}
+        mapped=roles.story_event_map(events)
+        self.assertEqual(mapped[0],0xffffffff) # missing call target
+        self.assertEqual(mapped[1],0xffffffff) # multiple authored replacements
 
     def test_absent_defeated_and_consumed_partners_are_not_selected(self):
         for address,value in ((part.PRESENT,3),(part.CONSUMED,4),(self.piccolo+0x9e4+0xa4,0)):

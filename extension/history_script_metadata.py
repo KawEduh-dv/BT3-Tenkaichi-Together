@@ -49,6 +49,11 @@ def action(ram,address,pool_address):
             command['options'].append(dict(flag=chr((option>>8)&255),args=values))
             position+=4+count*4
         commands.append(command)
+    return dict(label=label,commands=commands,replacements=change_members(commands))
+
+
+def change_members(commands):
+    """Decode authored ChangeMember commands from an action or flattened call graph."""
     changes=[]
     for command in commands:
         if command['kind']==1 and command['opcode']==8 and len(command['args'])>=2:
@@ -56,7 +61,7 @@ def action(ram,address,pool_address):
             operation=what&0xfff
             if 16<=operation<=20:
                 changes.append(dict(side=(what>>15)&1,slot=operation-16,address=command['address']))
-    return dict(label=label,commands=commands,replacements=changes)
+    return changes
 
 
 def replacement_prompt(flags):

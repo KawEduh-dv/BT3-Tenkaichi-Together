@@ -15,7 +15,7 @@ Projeto de cooperativo local para **Dragon Ball Z: Budokai Tenkaichi 3**, execut
 - Vida dos aliados e inimigos configurável entre 25% e 400%, preservando a proporção de dano e os personagens derrotados. O padrão dos inimigos é 150%, com mínimo de 60.000 HP.
 - Escolha de 1 ou 2 jogadores nos detalhes das batalhas cooperativas isoladas. Com 1 jogador, o parceiro é controlado pela IA.
 - Menu próprio com entrada automática, Select sem fechar/reabrir em sequência e Triângulo para retornar ao menu original.
-- Adaptador de eventos lê o roteiro carregado em cada capítulo, sem ficar preso ao índice da missão Raditz. Trocas comuns para um aliado já em campo não pedem R3 nem recarregam outro corpo; eventos que combinam troca com golpe roteirizado mantêm a troca nativa para preservar o dano especial e a conclusão. Os capítulos seguintes ainda precisam de validação em jogo.
+- Adaptador de eventos lê dinamicamente o roteiro GSC carregado e percorre ações chamadas. Na auditoria estática da ISO USA, identificou 107 eventos de troca em 31 dos 48 cenários de batalha; os demais eventos não continham uma troca de personagem. A validação de runtime do coop continua limitada a Raditz; dano roteirizado, R3 e todas as outras fases ainda precisam de teste em jogo.
 - Tela de créditos própria, com atribuição ao projeto de origem.
 
 Esses resultados são testes locais de desenvolvimento; não equivalem à certificação de toda a campanha.
