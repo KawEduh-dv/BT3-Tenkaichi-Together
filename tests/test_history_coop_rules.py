@@ -1,5 +1,6 @@
 import unittest
-from history_coop_rules import R3Coordinator,EventKind,EnemyWaves,StoryEnemy,enemy_health
+from history_coop_rules import (R3Coordinator,EventKind,EnemyWaves,StoryEnemy,enemy_health,
+                                campaign_participation_mask)
 from history_coop_plan import build,EnemyIdentity
 from history_native_reader import NativeMember,NativeTeam,HistorySnapshot
 
@@ -39,6 +40,25 @@ class R3Tests(unittest.TestCase):
     def test_stale_acknowledgement_cannot_complete_another_event(self):
         c=R3Coordinator();c.arm(1,'replace');c.update(True,False)
         with self.assertRaises(ValueError):c.acknowledge(2,success=True)
+
+
+class CampaignFormationTests(unittest.TestCase):
+    def test_duo_mode_keeps_p1_p2_and_every_native_enemy_not_ally_reserves(self):
+        # The observed Nappa setup was five allies against one enemy (mask 343).
+        self.assertEqual(campaign_participation_mask(343,10,'duo'),0b111)
+
+    def test_time_x_time_mode_retains_every_authored_fighter(self):
+        self.assertEqual(campaign_participation_mask(343,10,'time_x_time'),343)
+
+    def test_formation_requires_two_player_bodies_and_an_enemy(self):
+        for mask in (0,0b10,0b101):
+            with self.subTest(mask=mask),self.assertRaises(ValueError):
+                campaign_participation_mask(mask,6,'duo')
+        with self.assertRaises(ValueError):campaign_participation_mask(343,10,'everybody')
+
+    def test_single_native_ally_gets_a_reserved_second_player_body(self):
+        self.assertEqual(campaign_participation_mask(0b11,4,'duo'),0b111)
+        self.assertEqual(campaign_participation_mask(0b11,4,'time_x_time'),0b111)
 
 
 class WaveTests(unittest.TestCase):

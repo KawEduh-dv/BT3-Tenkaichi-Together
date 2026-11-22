@@ -4,10 +4,13 @@ import struct
 import fresh_team_combat as core
 
 
-def build_memory(ram, *, source='<campaign>', present_mask, ally_percent=100, enemy_percent=150):
+def build_memory(ram, *, source='<campaign>', present_mask, ally_percent=100, enemy_percent=150,
+                 enemy_bonus_per_ally=25):
     for value in (ally_percent, enemy_percent):
         if type(value) is not int or not 25<=value<=400:
             raise ValueError('Campaign HP percentage must be an integer from 25 to 400')
+    if type(enemy_bonus_per_ally) is not int or not 0<=enemy_bonus_per_ally<=100:
+        raise ValueError('Per-ally enemy HP bonus must be an integer from 0 to 100')
     if len(ram)!=0x8000000:
         raise ValueError('Campaign health requires 128 MiB captured RAM')
     u=lambda address:struct.unpack_from('<I',ram,address)[0]
@@ -22,6 +25,7 @@ def build_memory(ram, *, source='<campaign>', present_mask, ally_percent=100, en
         raise ValueError('Prepared campaign ownership changed')
     if type(present_mask) is not int or not 0<present_mask<(1<<count):
         raise ValueError('Campaign participation mask is invalid')
+    ally_count=sum(bool(present_mask&(1<<physical)) for physical in range(0,count,2))
     blocks=[]
     seen=set()
     enemies=0
@@ -43,13 +47,14 @@ def build_memory(ram, *, source='<campaign>', present_mask, ally_percent=100, en
             hp,maximum=u(row+64),u(row+68)
             if not 0<=hp<=maximum<=1_000_000 or not maximum:
                 raise ValueError('Campaign enemy health is invalid')
-            percent=enemy_percent if enemy else ally_percent
-            target=max(60000 if enemy else 1,(maximum*percent+99)//100)
+            percent=ally_percent if not enemy else enemy_percent+enemy_bonus_per_ally*ally_count
+            target=max(60000 if enemy else 1,min(1_000_000,(maximum*percent+99)//100))
             scaled=min(target,(hp*target+maximum-1)//maximum)
             old=ram[row+64:row+72]
             new=struct.pack('<2I',scaled,target)
             if old!=new:
                 blocks.append(dict(address=row+64,expected_hex=old.hex(),data_hex=new.hex(),
-                    purpose=f'Campaign {"enemy" if enemy else "ally"} HP at {percent} percent'))
+                    purpose=(f'Campaign enemy HP at {percent}% including {ally_count} opposing fighters'
+                             if enemy else f'Campaign ally HP at {percent} percent')))
     if not enemies:raise ValueError('Campaign has no participating opponent')
     return dict(serial='SLUS-21678',crc='428113C2',source=str(source),blocks=blocks)

@@ -20,6 +20,20 @@ EVENT_MAP=CONTROL+32
 REGS=tuple(range(8,16))
 
 
+def supports_coop_roster(count, present_mask):
+    """Whether the captured physical roster contains both co-op-controlled allies.
+
+    Campaigns add or remove enemy bodies between chapters; an exact mask is not
+    a valid story-mode discriminator. The two player seats remain physical 0/2.
+    """
+    if (type(count) is not int or count not in (4,6,8,10,12) or
+            type(present_mask) is not int or not 0 <= present_mask < (1 << count) or
+            (present_mask & 0b000101) != 0b000101):
+        return False
+    enemy_slots=sum(1<<physical for physical in range(1,count,2))
+    return bool(present_mask & enemy_slots)
+
+
 def save(a):
     a.addiu(29,29,-0x40)
     for i,r in enumerate(REGS):a.i(63,r,29,i*8)

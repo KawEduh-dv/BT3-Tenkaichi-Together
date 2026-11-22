@@ -31,7 +31,7 @@ class CampaignHealthTests(unittest.TestCase):
         self.assertEqual(len(plan['blocks']),1)
         block=plan['blocks'][0]
         self.assertEqual(block['address'],0x122000+0x9e4)
-        self.assertEqual(struct.unpack('<2I',bytes.fromhex(block['data_hex'])),(45000,90000))
+        self.assertEqual(struct.unpack('<2I',bytes.fromhex(block['data_hex'])),(60000,120000))
 
     def test_allies_and_absent_enemies_are_not_changed(self):
         addresses={block['address'] for block in self.plan()['blocks']}
@@ -39,7 +39,7 @@ class CampaignHealthTests(unittest.TestCase):
 
     def test_dead_enemy_is_not_revived(self):
         self.put(0x122000+0x9e4,0)
-        self.assertEqual(struct.unpack('<2I',bytes.fromhex(self.plan()['blocks'][0]['data_hex'])),(0,90000))
+        self.assertEqual(struct.unpack('<2I',bytes.fromhex(self.plan()['blocks'][0]['data_hex'])),(0,120000))
 
     def test_second_present_enemy_is_scaled(self):
         self.assertEqual(len(self.plan(15)['blocks']),2)
@@ -61,12 +61,33 @@ class CampaignHealthTests(unittest.TestCase):
         values={b['address']:struct.unpack('<2I',bytes.fromhex(b['data_hex'])) for b in plan['blocks']}
         self.assertEqual(values[0x120000+0x9e4],(60000,120000))
         self.assertEqual(values[0x124000+0x9e4],(60000,120000))
-        self.assertEqual(values[0x122000+0x9e4],(90000,180000))
+        self.assertEqual(values[0x122000+0x9e4],(105000,210000))
+
+    def test_enemy_hp_bonus_is_added_per_present_ally(self):
+        plan=build_memory(self.ram,present_mask=7,enemy_percent=150,enemy_bonus_per_ally=25)
+        value=struct.unpack('<2I',bytes.fromhex(plan['blocks'][0]['data_hex']))
+        self.assertEqual(value,(60000,120000))
+
+    def test_more_allies_scale_boss_hp_against_each_fighter(self):
+        # Four allies and one enemy: 150% base + 4 * 25% = 250%.
+        struct.pack_into('<4I',self.ram,core.MODE,1,8,0x110000,8)
+        for physical in range(4,8):
+            actor=0x120000+physical*0x2000
+            self.put(core.POINTERS+physical*4,actor)
+            self.put(actor,physical);self.put(actor+8,physical&1)
+            self.put(actor+0x998,1);self.put(actor+0x9ac,1)
+            self.put(actor+0x9e4,30000);self.put(actor+0x9e8,60000)
+        enemy=build_memory(self.ram,present_mask=0xff,enemy_percent=150,enemy_bonus_per_ally=25)
+        enemy_block=next(block for block in enemy['blocks'] if block['address']==0x122000+0x9e4)
+        self.assertEqual(struct.unpack('<2I',bytes.fromhex(enemy_block['data_hex'])),(75000,150000))
 
     def test_invalid_hp_setting_is_refused_before_writes(self):
         for value in (True,0,401,150.5):
             with self.subTest(value=value),self.assertRaises(ValueError):
                 build_memory(self.ram,present_mask=7,enemy_percent=value)
+        for value in (True,-1,101,25.5):
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                build_memory(self.ram,present_mask=7,enemy_bonus_per_ally=value)
 
 
 if __name__=='__main__':unittest.main()

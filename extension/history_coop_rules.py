@@ -8,6 +8,32 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+FORMATIONS=('duo','time_x_time')
+
+
+def campaign_participation_mask(native_mask, actor_count, formation='duo'):
+    """Keep the story pair by default, or activate the whole authored roster.
+
+    Physical slots alternate ally/enemy. Duo mode retains P1, P2, and every
+    native enemy present in this chapter; Time x Time retains the full roster.
+    """
+    if formation not in FORMATIONS:
+        raise ValueError('Unknown Dragon History formation')
+    if (type(actor_count) is not int or actor_count not in (4,6,8,10,12) or
+            type(native_mask) is not int or not 0 < native_mask < (1 << actor_count)):
+        raise ValueError('Invalid native Dragon History roster')
+    if not native_mask & 1:
+        raise ValueError('Dragon History P1 must be present in the captured roster')
+    enemies=sum(1<<physical for physical in range(1,actor_count,2))
+    enemy_members=native_mask & enemies
+    if not enemy_members:
+        raise ValueError('Dragon History roster has no active enemy')
+    players=0b000101  # P2 uses the reserved second ally slot if the story has only one ally.
+    if formation=='time_x_time':
+        return native_mask | players
+    return players | enemy_members
+
+
 class EventKind(str, Enum):
     REPLACE = 'replace'
     TRANSFORM = 'transform'

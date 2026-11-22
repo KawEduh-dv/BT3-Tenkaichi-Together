@@ -18,9 +18,12 @@ class StorySetupModelTests(unittest.TestCase):
         c=menu.Controller();c.press(menu.RIGHT);self.assertIsNone(c.press(menu.CROSS))
         self.assertEqual(c.page,'rules')
         c.press(menu.RIGHT);c.press(menu.DOWN);c.press(menu.RIGHT);c.press(menu.DOWN)
+        c.press(menu.RIGHT);c.press(menu.DOWN);c.press(menu.RIGHT);c.press(menu.DOWN)
         result=c.press(menu.CROSS)
         self.assertEqual(result['humans'],2)
-        self.assertEqual(result['health'],{'history_ally_hp_percent':150,'history_enemy_hp_percent':175})
+        self.assertEqual(result['health'],{'history_ally_hp_percent':150,'history_enemy_hp_percent':175,
+                                           'history_enemy_hp_per_ally_bonus':50,
+                                           'history_formation':'time_x_time'})
 
     def test_inline_panel_leaves_the_original_history_scene_visible(self):
         from guest_loading_screen import CAPACITY,gif_packet,image_rectangles
@@ -59,12 +62,21 @@ class StorySetupHostIntegrationTests(unittest.TestCase):
     def test_new_install_enables_the_story_setup_interface(self):
         self.assertIs(mod_settings.validate_settings({})['fullcoop_interface'],True)
 
+    def test_per_ally_enemy_hp_bonus_has_safe_settings_bounds(self):
+        self.assertEqual(mod_settings.validate_settings({})['history_enemy_hp_per_ally_bonus'],25)
+        self.assertEqual(mod_settings.validate_settings({'history_enemy_hp_per_ally_bonus':0})[
+            'history_enemy_hp_per_ally_bonus'],0)
+        for value in (True,-1,101,25.5):
+            with self.subTest(value=value),self.assertRaises(ValueError):
+                mod_settings.validate_settings({'history_enemy_hp_per_ally_bonus':value})
+
     def test_menu_host_returns_history_choice_to_the_watcher(self):
         host=object.__new__(native_mode_menu.Controller)
         host.closed=False;host.settings={}
         host.scenarios=SimpleNamespace(settings={},checkpoint_ready=False)
         choice=dict(mode='coop',humans=2,history=True,
-                    health=dict(history_ally_hp_percent=125,history_enemy_hp_percent=175))
+                    health=dict(history_ally_hp_percent=125,history_enemy_hp_percent=175,
+                                history_enemy_hp_per_ally_bonus=25,history_formation='duo'))
         host.history_setup=SimpleNamespace(tick=lambda _p:choice)
         self.assertEqual(host.tick(object()),choice)
         self.assertEqual((host.mode,host.humans,host.custom_match),("coop",2,True))

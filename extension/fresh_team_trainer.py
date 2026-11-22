@@ -488,12 +488,15 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
         import history_coop_health
         builders.append(lambda r: history_coop_health.build_memory(r,source=source,present_mask=present_mask,
             ally_percent=settings.get('history_ally_hp_percent',100),
-            enemy_percent=settings.get('history_enemy_hp_percent',150)))
+            enemy_percent=settings.get('history_enemy_hp_percent',150),
+            enemy_bonus_per_ally=settings.get('history_enemy_hp_per_ally_bonus',25)))
         # Resolve the currently loaded story actions for every campaign chapter.
         # Event labels and ChangeMember targets are read from the live GSC table,
         # so this is not tied to the Raditz chapter index.
-        if present_mask==7:
-            import history_story_roles
+        # Chapters can load multiple opponents/reserves. The story-role adapter
+        # needs the two cooperative bodies, not one exact 1v1 participation mask.
+        import history_story_roles
+        if history_story_roles.supports_coop_roster(u(combat.MODE+4),present_mask):
             builders.append(lambda r: history_story_roles.build_memory(r,source=source))
     import lockon_threat
     # Hook lock-off last so story adapters and all preceding builders are visible,
@@ -887,6 +890,15 @@ class Session:
         mission=story_missions.armed() if self.battle_mode == 'teams' else None
         minimum_members=2 if self.history_coop or mission is not None or battle_mode_policy.prepare_singleton(self.battle_mode,self.humans) else 1
         selection = capture(ram,minimum_members=minimum_members)
+        battle_selection=selection
+        if self.history_coop:
+            import history_coop_rules
+            count=2*selection['members_per_side']
+            mask=history_coop_rules.campaign_participation_mask(selection['participation_mask'],count,
+                self.settings.get('history_formation','duo'))
+            battle_selection=dict(selection,participation_mask=mask)
+            log(f"Dragon History formation {self.settings.get('history_formation','duo')}: "
+                f"{mask.bit_count()} active fighters from {selection['selected_fighter_count']} selected.")
         if mission is not None:
             import story_runtime
             mission=story_runtime.validate_selection(mission,selection,ram,self.humans,self.assignment)
@@ -904,7 +916,7 @@ class Session:
         warm_preparation(self.settings, self.battle_mode)
         if self.battle_mode in ('coop','training_coop') or self.humans>=3 or self.assignment is not None:
             battle_mode_policy.validate_roster('coop' if self.battle_mode=='training_coop' else 'teams' if self.battle_mode=='training' else self.battle_mode,2*selection['members_per_side'],
-                                               selection['participation_mask'],self.humans,self.assignment)
+                                               battle_selection['participation_mask'],self.humans,self.assignment)
         if not 2 <= selection['members_per_side'] <= battle_mode_policy.TEAM_CAPACITY:
             raise ValueError(f'Select up to {battle_mode_policy.TEAM_CAPACITY} fighters on each team, with at least one extra fighter')
         capture_path = write_json(self.run/'selection.json', selection)
@@ -943,7 +955,7 @@ class Session:
         self.wait_word(packets.CONTROL, 5, 'Expanding graphics buffers...')
         ram = self.snapshot('render-ready')
         self.progress('Preparing arena', 4)
-        config = actor_config(ram, self.mode, selection, battle_mode=self.battle_mode,humans=self.humans,assignment=self.assignment)
+        config = actor_config(ram, self.mode, battle_selection, battle_mode=self.battle_mode,humans=self.humans,assignment=self.assignment)
         write_json(self.run/'team-config.json', config)
         core = combat.build(self.source, config)
         guards = safety.build(self.source, config)
@@ -966,7 +978,7 @@ class Session:
                 struct.pack('<I', int(self.mode == 'TwoPlayer')), 'Set selected controller view layout'))
         # Install every dependent quality patch before the first exposed frame.
         final = final_team_manifest(ram, activation, self.source, play_intro=self.play_intro,
-            pause_mode=self.settings[mod_settings.MODE_KEY], present_mask=selection['participation_mask'],
+            pause_mode=self.settings[mod_settings.MODE_KEY], present_mask=battle_selection['participation_mask'],
             settings=self.settings, battle_mode=self.battle_mode, humans=self.humans,assignment=self.assignment,mission=mission,
             gauntlet=gauntlet)
         self.install(final, 'complete-team')

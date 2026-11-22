@@ -104,7 +104,8 @@ DEFAULTS = {'version': VERSION, MODE_KEY: 'all', ULTIMATE_KEY: False,
             REVIVE_KEY: False, REVIVE_COST_KEY: 4, REVIVE_CHANNEL_KEY: 4.0}
 DEFAULTS['fullcoop_interface'] = True
 DEFAULTS.update(feature_preferences.DEFAULTS)
-DEFAULTS.update(history_ally_hp_percent=125, history_enemy_hp_percent=150)
+DEFAULTS.update(history_ally_hp_percent=125, history_enemy_hp_percent=150,
+                history_enemy_hp_per_ally_bonus=25,history_formation='duo')
 
 # Settings pages, in order: (English group name, keys in display order). Every
 # editable key belongs to exactly one page. Keep 'Menus' first and the names
@@ -114,7 +115,8 @@ GROUPS = (
                'loading_animation_speed_percent')),
     ('Players and controllers', ('coop_independent_selection', 'all_controllers_character_select',
                                  'show_player_slot_labels', 'controller_checkin', 'keep_controller_checkins')),
-    ('História cooperativa', ('history_ally_hp_percent', 'history_enemy_hp_percent')),
+    ('História cooperativa', ('history_ally_hp_percent', 'history_enemy_hp_percent',
+                              'history_enemy_hp_per_ally_bonus','history_formation')),
     ('Controls', (LOCKON_KEY, LOCKON_HOLD_KEY, 'lockoff_enabled', 'lockoff_button', 'lockoff_hold_seconds',
                   'lockon_right_stick', 'lockon_right_stick_mode', 'lockon_cycle_order', 'lockon_attacker_switch',
                   'lockon_after_ko')),
@@ -163,7 +165,7 @@ HEADER = ('Choose a category. Saved changes apply to the next match unless its p
 # One help note per page (desktop page footer and in-game help). Keep this a
 # pure literal: test_localization reads it with ast.literal_eval.
 notes = {
-    'História cooperativa': 'Vida aplicada uma vez ao preparar cada missão cooperativa. Mantém a proporção de dano e não revive personagens derrotados. Inimigos têm no mínimo 60000 HP. O modo história automático ainda está em desenvolvimento; estas opções ajustam as missões preparadas pelo cooperativo.',
+    'História cooperativa': 'Vida aplicada uma vez ao preparar cada missão cooperativa. O bônus inimigo é somado por cada aliado presente, depois do percentual base configurado. Dupla mantém P1 e P2; Time x Time ativa todos os lutadores que a fase carregou. Mantém a proporção de dano e não revive personagens derrotados. Inimigos têm no mínimo 60000 HP.',
     'Menus': 'Press the menu switch button on the original main menu to open or close the mod menus; its hint can be hidden. With mod mode menus off, only Mod settings.cmd can turn them back on. Menu settings saved in game apply when you leave Mod Settings; saved in Mod settings.cmd, after restarting Play. Language also changes match text from the next match. Loading speed applies from the next loading screen.',
     'Players and controllers': 'Check-in: on Player Setup each player presses START on their own controller to join; a light flashes with each press and SELECT leaves the seat. With 3 or 4 players everyone joins before Continue; with 2, PCSX2 keeps its order unless someone presses START (or check-in is set for 2 to 4 players). Optional keeps the connection order, and anyone may still check in. A keyboard joins as player 1 or 2 through PCSX2. Kept check-ins fill the seats again until Play closes. With own fighters on, each human picks their assigned slots; otherwise Player 1 picks. Allowing all controllers lets any controller move the cursor. Player numbers mark whose slot is whose. Saved in game, these apply when you leave Mod Settings; saved in Mod settings.cmd, after restarting Play.',
     'Controls': 'Tap the switch button: next enemy in the set order; during an attack warning, your attacker (or automatically when hit, if set). Right stick, with the button held (not R3) or alone if set (locked on in combat; no camera then): left/right steps around you, up/down picks above/below. Hold the button to lock off; tap to relock. R3 transforms. Rebind in Mod settings.cmd. Applies next match; Fight Again keeps it.',
@@ -211,6 +213,13 @@ def validate_settings(settings, defaults=None):
         result.setdefault(key, DEFAULTS[key])
         if type(result[key]) is not int or not 25 <= result[key] <= 400:
             raise ValueError(f'{key} must be an integer from 25 to 400.')
+    key='history_enemy_hp_per_ally_bonus'
+    result.setdefault(key,DEFAULTS[key])
+    if type(result[key]) is not int or not 0<=result[key]<=100:
+        raise ValueError(f'{key} must be an integer from 0 to 100.')
+    result.setdefault('history_formation','duo')
+    if result['history_formation'] not in ('duo','time_x_time'):
+        raise ValueError('history_formation must be duo or time_x_time.')
     # Older saved L3 holds must remain loadable when adding the second gesture.
     # Preserve their switch binding and give the new hold half a second more.
     if ('lockoff_hold_seconds' not in result
@@ -619,6 +628,8 @@ def ui_fields():
     rows = {
         'history_ally_hp_percent': (125,'int',25,400,'História cooperativa','Vida dos aliados (%)'),
         'history_enemy_hp_percent': (150,'int',25,400,'História cooperativa','Vida dos inimigos (%)'),
+        'history_enemy_hp_per_ally_bonus': (25,'int',0,100,'História cooperativa','Bônus inimigo por aliado (%)'),
+        'history_formation': ('duo','choice',('duo','time_x_time'),None,'História cooperativa','Formação da campanha'),
         MODE_KEY: ('all','choice',MODES,None,'Cinematics','Special-move pause'),
         ULTIMATE_KEY: (False,'bool',None,None,'Cinematics','Ultimate attacks: shared camera and pause'),
         TRANSFORMATION_KEY: (False,'bool',None,None,'Cinematics','Transformations: camera and pause'),

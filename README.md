@@ -6,6 +6,8 @@ Projeto de cooperativo local para **Dragon Ball Z: Budokai Tenkaichi 3**, execut
 
 > **Em desenvolvimento.** As batalhas cooperativas isoladas já foram testadas. A campanha completa ainda não é uma versão pública pronta para jogar: R3, conclusão das missões e progressão continuam em implementação e verificação.
 
+O teste do usuário em Nappa revelou que a seleção de 2 jogadores preparou uma luta 5v1. O código local agora corrige essa formação padrão e oferece **Time x Time** como opção; esta correção automatizada ainda aguarda uma nova validação dentro do PCSX2.
+
 ## O que já foi verificado
 
 - Dois aliados independentes, com controles separados, na luta original contra Raditz.
@@ -16,6 +18,7 @@ Projeto de cooperativo local para **Dragon Ball Z: Budokai Tenkaichi 3**, execut
 - Escolha de 1 ou 2 jogadores nos detalhes das batalhas cooperativas isoladas. Com 1 jogador, o parceiro é controlado pela IA.
 - Menu próprio com entrada automática, Select sem fechar/reabrir em sequência e Triângulo para retornar ao menu original.
 - Adaptador de eventos lê dinamicamente o roteiro GSC carregado e percorre ações chamadas. Na auditoria estática da ISO USA, identificou 107 eventos de troca em 31 dos 48 cenários de batalha; os demais eventos não continham uma troca de personagem. A validação de runtime do coop continua limitada a Raditz; dano roteirizado, R3 e todas as outras fases ainda precisam de teste em jogo.
+- Código local do Dragon History: **Dupla** mantém P1/P2 e os inimigos nativos da fase; **Time x Time** mantém todos os lutadores selecionados. O ajuste de vida dos inimigos soma um bônus configurável por aliado presente ao percentual base.
 - Tela de créditos própria, com atribuição ao projeto de origem.
 
 Esses resultados são testes locais de desenvolvimento; não equivalem à certificação de toda a campanha.
@@ -25,7 +28,7 @@ Esses resultados são testes locais de desenvolvimento; não equivalem à certif
 - Ativação e continuação da campanha completa, preservando os eventos e os saves.
 - R3 de troca somente quando existe um aliado na reserva. Um personagem já em combate não é um destino de troca.
 - Troca para o primeiro jogador que apertar; transformações sincronizadas quando aplicáveis.
-- Pergunta de 1 ou 2 jogadores ao entrar em Dragon History; dificuldade da IA, entradas individuais, em duplas ou simultâneas e inimigos por jogador.
+- Troca manual de personagem entre aliados vivos, configuração de IA e de inimigos por jogador.
 - Menus com arte própria e presets de regras.
 - Compatibilidade por perfis de ISO. Mods que alteram código ou scripts precisam de validação; compatibilidade universal não é garantida.
 

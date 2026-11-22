@@ -59,6 +59,15 @@ class EE:
 
 
 class StoryRoleTests(unittest.TestCase):
+    def test_coop_story_adapter_accepts_chapter_rosters_with_extra_enemies(self):
+        self.assertTrue(roles.supports_coop_roster(4,0b000111))
+        self.assertTrue(roles.supports_coop_roster(6,0b111111))
+        self.assertTrue(roles.supports_coop_roster(10,0b1111111111))
+        self.assertFalse(roles.supports_coop_roster(4,0b000011)) # P2 body absent
+        self.assertFalse(roles.supports_coop_roster(4,0b000101)) # no opponent
+        self.assertFalse(roles.supports_coop_roster(3,0b000101)) # invalid capacity
+        self.assertFalse(roles.supports_coop_roster(4,True))
+
     def setUp(self):
         self.manager=0x180000;self.goku=0x190000;self.piccolo=0x1a0000
         self.memory={roles.CONTROL:roles.MAGIC,roles.CONTROL+4:self.manager,

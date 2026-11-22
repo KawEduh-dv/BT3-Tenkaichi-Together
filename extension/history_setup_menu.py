@@ -51,7 +51,7 @@ class Controller:
         self.settings=dict(settings or {})
         self.active=False;self.session=False;self.players=1;self.page='players';self.row=0
         self.screen=None;self.dirty=True;self.input_ready=False;self.result=None
-        self.ally_hp=125;self.enemy_hp=150;self.presented_once=False
+        self.ally_hp=125;self.enemy_hp=150;self.enemy_bonus=25;self.formation='duo';self.presented_once=False
 
     def picture(self):
         from PIL import Image,ImageDraw
@@ -73,21 +73,23 @@ class Controller:
             # scenario choices and dialogue box. The earlier full-height card
             # hid the game's art/text and made the overlay feel like a separate
             # app instead of a Dragon History option.
-            draw.rounded_rectangle((56,222,456,326),radius=5,fill=(8,31,58),outline=(239,174,42),width=2)
-            draw.line((64,247,448,247),fill=(67,113,155),width=1)
-            art.label(draw,'REGRAS DA CAMPANHA',(70,228),210,13,True,fill=art.GOLD)
-            art.label(draw,'L/R AJUSTA  ·  X CONFIRMA  ·  △ VOLTA',(252,231),190,8,True,fill=art.DIM)
+            draw.rounded_rectangle((56,210,456,344),radius=5,fill=(8,31,58),outline=(239,174,42),width=2)
+            draw.line((64,234,448,234),fill=(67,113,155),width=1)
+            art.label(draw,'REGRAS DA CAMPANHA',(70,216),210,13,True,fill=art.GOLD)
+            art.label(draw,'L/R AJUSTA  ·  X CONFIRMA  ·  △ VOLTA',(252,219),190,8,True,fill=art.DIM)
             rows=(('Vida dos aliados',str(self.ally_hp)+'%'),
                   ('Vida dos inimigos',str(self.enemy_hp)+'%'),
+                  ('Bônus inimigo por aliado',f'+{self.enemy_bonus}%'),
+                  ('Formação', 'Dupla (P1 + P2)' if self.formation=='duo' else 'Time x Time'),
                   ('Iniciar campanha coop','2 jogadores'))
             for i,(title,value) in enumerate(rows):
-                y=251+i*23
-                draw.rounded_rectangle((70,y,442,y+20),radius=3,
+                y=236+i*19
+                draw.rounded_rectangle((70,y,442,y+18),radius=3,
                     fill=(17,61,101) if self.row==i else (11,43,74),
                     outline=(255,193,54) if self.row==i else (54,101,142),width=2 if self.row==i else 1)
-                art.label(draw,title,(82,y+4),250,10,True)
-                art.label(draw,value,(350,y+3),78,11,True,fill=art.GOLD)
-            art.label(draw,'CIMA / BAIXO: ESCOLHER',(82,321),170,8,True,fill=art.DIM)
+                art.label(draw,title,(82,y+3),250,9,True)
+                art.label(draw,value,(330,y+2),102,9,True,fill=art.GOLD)
+            art.label(draw,'CIMA / BAIXO: ESCOLHER  ·  L/R: AJUSTAR',(82,332),350,8,True,fill=art.DIM)
         return image
 
     def press(self,edges):
@@ -100,16 +102,22 @@ class Controller:
                 self.page='rules';self.row=0
         else:
             if edges&TRIANGLE:self.page='players';return None
-            if edges&(UP|DOWN):self.row=(self.row+(1 if edges&DOWN else -1))%3
-            if self.row<2 and edges&(LEFT|RIGHT):
-                key='ally_hp' if self.row==0 else 'enemy_hp'
-                setattr(self,key,max(25,min(400,getattr(self,key)+(25 if edges&RIGHT else -25))))
-            if edges&CROSS and self.row==2:return self.commit()
+            if edges&(UP|DOWN):self.row=(self.row+(1 if edges&DOWN else -1))%5
+            if self.row==3 and edges&(LEFT|RIGHT):
+                self.formation='time_x_time' if self.formation=='duo' else 'duo'
+            if self.row<3 and edges&(LEFT|RIGHT):
+                key=('ally_hp','enemy_hp','enemy_bonus')[self.row]
+                low=0 if self.row==2 else 25
+                high=100 if self.row==2 else 400
+                setattr(self,key,max(low,min(high,getattr(self,key)+(25 if edges&RIGHT else -25))))
+            if edges&CROSS and self.row==4:return self.commit()
         return None
 
     def commit(self):
         self.result=dict(mode='coop' if self.players==2 else 'teams',humans=self.players,history=True,
-                         health=dict(history_ally_hp_percent=self.ally_hp,history_enemy_hp_percent=self.enemy_hp))
+                         health=dict(history_ally_hp_percent=self.ally_hp,history_enemy_hp_percent=self.enemy_hp,
+                                     history_enemy_hp_per_ally_bonus=self.enemy_bonus,
+                                     history_formation=self.formation))
         return self.result
 
     def open(self,p,owner):
@@ -123,6 +131,8 @@ class Controller:
         # deliberately raised above the new baseline.
         self.ally_hp=max(125,self.settings.get('history_ally_hp_percent',125))
         self.enemy_hp=self.settings.get('history_enemy_hp_percent',150)
+        self.enemy_bonus=self.settings.get('history_enemy_hp_per_ally_bonus',25)
+        self.formation=self.settings.get('history_formation','duo')
         self.screen=GuestLoadingScreen()
         p.write(CONTROL,struct.pack('<8I',MAGIC,1,180,0,p.read_u32(PAD+0x150),owner,0,
                                      p.read_u32(PAD+0x1c0+0x150)))
