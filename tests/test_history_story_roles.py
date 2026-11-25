@@ -335,6 +335,20 @@ class StoryRoleTests(unittest.TestCase):
         self.assertEqual(cpu.mem[roles.CONTROL+20],self.goku)
         self.assertEqual(cpu.mem[roles.CONTROL+24],1)
 
+    def test_prompt_for_member_already_in_arena_skips_native_replacement_menu(self):
+        request=0x334464
+        self.memory.update({0x333f10:request,request:2,request+8:10005,
+            request+12:0x333d0c+5,roles.EVENT_MAP+(10005-10000)*4:1,
+            roles.CONTROL+8:self.goku,roles.CONTROL+12:0x1b0000})
+        code=[(roles.FIND,roles.redundant_event_code()),
+              (roles.PROMPT,roles.prompt_code(roles.PROMPT,input_query=False))]
+        cpu=EE(code,self.memory)
+        exit_at=cpu.run(roles.PROMPT,0,ra=0x101000)
+        self.assertEqual(exit_at,0x22d9b0)  # native selection UI is bypassed
+        self.assertEqual(cpu.mem[roles.CONTROL+8],self.piccolo)
+        self.assertEqual(cpu.mem[roles.CONTROL+20],self.goku)
+        self.assertEqual(cpu.mem[roles.CONTROL+24],1)
+
     def test_nappa_tien_p1_r3_keeps_chaotzu_as_the_scripted_ultimate_actor(self):
         # Nappa scenario: the story assigns Tien, then Chiaotzu, before the
         # authored ultimate. P1's R3 input must not replace that authored role.
