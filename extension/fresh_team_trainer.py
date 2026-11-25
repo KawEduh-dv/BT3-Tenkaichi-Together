@@ -332,11 +332,20 @@ def verify_history_story_roles_manifest(manifest, ram, event_map=None):
     from history_script_metadata import loaded_events
     if event_map is None:
         event_map = roles.story_event_map(loaded_events(ram))
+    forced_entry=0x1e12d0
+    forced_original=bytes(ram[forced_entry:forced_entry+8])
+    if len(forced_original)!=8:
+        raise ValueError('Dragon History co-op build cannot verify the native forced-action prologue')
     expected = (
         (0x259d90, struct.pack('<2I', (2 << 26) | (roles.PROMPT >> 2), 0)),
         (0x259cd0, struct.pack('<I', (3 << 26) | (roles.R3 >> 2))),
         (roles.CONTROL, struct.pack('<I', roles.MAGIC)),
         (roles.EVENT_MAP, struct.pack('<52I', *event_map)),
+        (roles.FORCED, roles.forced_action_code()),
+        (roles.TRAMP_FORCED, forced_original+
+            struct.pack('<2I',(2<<26)|((forced_entry+8)>>2),0)),
+        (forced_entry, struct.pack('<2I',(2<<26)|(roles.FORCED>>2),0)),
+        (roles.RELEASE_TRACK,b'\0'*(roles.RELEASE_TRACK_COUNT*4)),
     )
     blocks = [(int(block['address']), bytes.fromhex(block['data_hex']))
               for block in manifest['blocks']]

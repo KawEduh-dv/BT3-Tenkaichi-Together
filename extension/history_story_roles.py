@@ -16,7 +16,10 @@ MAGIC=0x48535231
 ENTRIES=(0x20ad50,)
 FIND,PROMPT,R3,TRAMP_PROMPT=BASE+0x2400,BASE+0x2800,BASE+0x2c00,BASE+0x2200
 STOP,TRAMP_STOP=BASE+0x1800,BASE+0x2300
+FORCED,TRAMP_FORCED=BASE+0x1c00,BASE+0x1e00
 EVENT_MAP=CONTROL+32
+RELEASE_TRACK=CONTROL+0x200
+RELEASE_TRACK_COUNT=12
 REGS=tuple(range(8,16))
 
 
@@ -44,14 +47,14 @@ def restore(a):
     a.addiu(29,29,0x40)
 
 
-def scope(a,fail):
+def scope(a,fail,*,side_argument=True):
     a.li(8,CONTROL);a.lw(9,8);a.li(10,MAGIC);a.branch(5,9,10,fail)
     a.lw(9,8,4);a.lw(10,28,-22364);a.branch(5,9,10,fail)
     a.li(9,0x331dd0);a.lw(9,9);a.addiu(10,0,1);a.branch(5,9,10,fail)
     a.li(9,core.MODE);a.lw(10,9);a.branch(4,10,0,fail)
     a.lw(10,9,8);a.lw(11,8,4);a.branch(5,10,11,fail)
     a.lw(10,9,4);a.lw(11,9,12);a.branch(5,10,11,fail)
-    a.i(11,10,4,2);a.branch(4,10,0,fail)
+    if side_argument:a.i(11,10,4,2);a.branch(4,10,0,fail)
 
 
 def physical_code(original):
@@ -115,6 +118,55 @@ def stop_code(count,present_mask):
     a.label('native');a.i(55,31,29,0);a.i(55,4,29,8)
     a.addiu(29,29,0x20);restore(a);a.jump(TRAMP_STOP)
     result=a.finish();assert len(result)<0x800;return result
+
+
+def forced_action_code():
+    """Release a looping story pose for a queued technique and clear its exit flag."""
+    a=Assembler(FORCED);a.addiu(29,29,-0x10)
+    a.sw(31,29,0);a.sw(16,29,4);a.sw(4,29,8);a.move(16,4)
+    scope(a,'native',side_argument=False)
+    a.lw(8,16,0x948);a.addiu(9,0,4);a.branch(4,8,9,'action4')
+    # Clear only exit flags created by this hook, never an unrelated authored flag.
+    a.li(10,RELEASE_TRACK);a.addiu(11,0,RELEASE_TRACK_COUNT)
+    a.label('clear_search');a.lw(12,10);a.branch(4,12,16,'clear_flag')
+    a.addiu(10,10,4);a.addiu(11,11,-1);a.branch(5,11,0,'clear_search')
+    a.jump('native')
+    a.label('clear_flag');a.move(4,16);a.addiu(5,0,0xfb);a.call(0x1daa50)
+    a.li(10,RELEASE_TRACK);a.addiu(11,0,RELEASE_TRACK_COUNT)
+    a.label('clear_slot');a.lw(12,10);a.branch(4,12,16,'clear_slot_found')
+    a.addiu(10,10,4);a.addiu(11,11,-1);a.branch(5,11,0,'clear_slot')
+    a.jump('native')
+    a.label('clear_slot_found');a.sw(0,10);a.jump('native')
+    a.label('action4')
+    a.lw(8,16,0x970);a.branch(4,8,0,'native')
+    a.i(36,9,16,0x1085+0x24);a.i(36,10,16,0x10ad+0x24)
+    a.r(0x25,9,9,10);a.i(12,9,9,0x1f);a.branch(4,9,0,'native')
+    a.i(36,9,16,0x1085+(0xfb>>3));a.i(36,10,16,0x10ad+(0xfb>>3))
+    a.r(0x25,9,9,10);a.i(12,9,9,1<<(0xfb&7));a.branch(5,9,0,'native')
+    a.li(10,RELEASE_TRACK);a.addiu(11,0,RELEASE_TRACK_COUNT)
+    a.label('mark_search');a.lw(12,10);a.branch(4,12,16,'set_exit')
+    a.branch(4,12,0,'mark_slot');a.addiu(10,10,4);a.addiu(11,11,-1)
+    a.branch(5,11,0,'mark_search');a.jump('native')
+    a.label('mark_slot');a.sw(16,10)
+    a.label('set_exit');a.move(4,16);a.addiu(5,0,0xfb);a.call(0x1da9d0)
+    a.jump('native')
+    a.label('native');a.lw(4,29,8);a.lw(16,29,4);a.lw(31,29,0)
+    a.addiu(29,29,0x10);a.jump(TRAMP_FORCED)
+    result=a.finish();assert len(result)<=TRAMP_FORCED-FORCED;return result
+
+
+def forced_action_patch(ram,original):
+    """Patch the action dispatcher in an already installed story-role state."""
+    entry=0x1e12d0;code=forced_action_code()
+    if len(original)!=8 or ram[entry:entry+8]!=original:
+        raise ValueError('Native BtlAct_CheckForced prologue changed')
+    if (any(ram[FORCED:FORCED+len(code)]) or any(ram[TRAMP_FORCED:TRAMP_FORCED+16]) or
+            any(ram[RELEASE_TRACK:RELEASE_TRACK+RELEASE_TRACK_COUNT*4])):
+        raise ValueError('Forced-action hook reservation is occupied')
+    trampoline=original+struct.pack('<2I',(2<<26)|((entry+8)>>2),0)
+    detour=struct.pack('<2I',(2<<26)|(FORCED>>2),0)
+    return [(FORCED,code),(TRAMP_FORCED,trampoline),(entry,detour),
+            (RELEASE_TRACK,b'\0'*(RELEASE_TRACK_COUNT*4))]
 
 
 def story_event_map(events):
@@ -230,6 +282,7 @@ def build_memory(ram, *, source='<story-role-probe>'):
     pieces.extend(((STOP,stop_code(u(core.MODE+4),u(part.PRESENT))),
         (TRAMP_STOP,original+struct.pack('<2I',(2<<26)|(0x20a2e8>>2),0)),
         (0x20a2e0,struct.pack('<2I',(2<<26)|(STOP>>2),0))))
+    pieces.extend(forced_action_patch(ram,read(0x1e12d0,8)))
     deferred=defer_memory(ram,validate=False)
     for entry,wrapper,trampoline in zip(ENTRIES,(CHANGE0,CHANGE1),(TRAMP0,TRAMP1)):
         original=read(entry,8)

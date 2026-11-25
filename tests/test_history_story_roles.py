@@ -32,7 +32,8 @@ class EE:
             elif op==9:self.r[rt]=(self.r[rs]+signed)&0xffffffff
             elif op==11:self.r[rt]=int(self.r[rs]<(signed&0xffffffff))
             elif op in (35,55):self.r[rt]=self.mem.get((self.r[rs]+signed)&0xffffffff,0)
-            elif op in (43,63):self.mem[(self.r[rs]+signed)&0xffffffff]=self.r[rt]
+            elif op==36:self.r[rt]=self.mem.get((self.r[rs]+signed)&0xffffffff,0)&0xff
+            elif op in (40,43,63):self.mem[(self.r[rs]+signed)&0xffffffff]=self.r[rt]& (0xff if op==40 else 0xffffffff)
             elif op in (2,3):
                 if op==3:self.r[31]=pc+8
                 following=(pc&0xf0000000)|((word&0x3ffffff)<<2)
@@ -59,6 +60,78 @@ class EE:
 
 
 class StoryRoleTests(unittest.TestCase):
+    def test_held_story_pose_releases_only_for_queued_technique(self):
+        actor=self.piccolo
+        self.memory.update({actor+0x948:4,actor+0x970:1,
+            actor+0x1085+(0x124>>3):1<<(0x124&7)})
+        flag_setter=roles.Assembler(0x1da9d0)
+        flag_setter.addiu(8,4,0x1085+(0xfb>>3))
+        flag_setter.i(36,9,8,0);flag_setter.i(13,9,9,1<<(0xfb&7))
+        flag_setter.i(40,9,8,0);flag_setter.r(8,0,31);flag_setter.emit(0)
+        trampoline=struct.pack('<2I',0x03e00008,0)
+        cpu=EE([(roles.FORCED,roles.forced_action_code()),
+                (roles.TRAMP_FORCED,trampoline),(0x1da9d0,flag_setter.finish())],self.memory)
+        cpu.run(roles.FORCED,actor,ra=0x101000)
+        flag_byte=cpu.mem.get(actor+0x1085+(0xfb>>3),0)
+        self.assertTrue(flag_byte&(1<<(0xfb&7)))
+
+    def test_held_story_pose_does_not_release_without_technique_flag(self):
+        actor=self.piccolo
+        self.memory.update({actor+0x948:4,actor+0x970:1,
+            actor+0x1085+(0x124>>3):0})
+        flag_setter=roles.Assembler(0x1da9d0)
+        flag_setter.addiu(8,4,0x1085+(0xfb>>3))
+        flag_setter.i(36,9,8,0);flag_setter.i(13,9,9,1<<(0xfb&7))
+        flag_setter.i(40,9,8,0);flag_setter.r(8,0,31);flag_setter.emit(0)
+        trampoline=struct.pack('<2I',0x03e00008,0)
+        cpu=EE([(roles.FORCED,roles.forced_action_code()),
+                (roles.TRAMP_FORCED,trampoline),(0x1da9d0,flag_setter.finish())],self.memory)
+        cpu.run(roles.FORCED,actor,ra=0x101000)
+        flag_byte=cpu.mem.get(actor+0x1085+(0xfb>>3),0)
+        self.assertFalse(flag_byte&(1<<(0xfb&7)))
+
+    def test_held_story_marker_clears_exit_flag_after_technique_leaves_pose(self):
+        actor=self.piccolo
+        self.memory.update({actor+0x948:4,actor+0x970:1,
+            actor+0x1085+(0x124>>3):1<<(0x124&7)})
+        setter=roles.Assembler(0x1da9d0)
+        setter.addiu(8,4,0x1085+(0xfb>>3));setter.i(36,9,8,0)
+        setter.i(13,9,9,1<<(0xfb&7));setter.i(40,9,8,0)
+        setter.r(8,0,31);setter.emit(0)
+        clearer=roles.Assembler(0x1daa50)
+        clearer.addiu(8,4,0x1085+(0xfb>>3));clearer.i(36,9,8,0)
+        clearer.i(12,9,9,~(1<<(0xfb&7))&0xffff);clearer.i(40,9,8,0)
+        clearer.r(8,0,31);clearer.emit(0)
+        trampoline=struct.pack('<2I',0x03e00008,0)
+        code=[(roles.FORCED,roles.forced_action_code()),
+              (roles.TRAMP_FORCED,trampoline),(0x1da9d0,setter.finish()),
+              (0x1daa50,clearer.finish())]
+        cpu=EE(code,self.memory)
+        cpu.run(roles.FORCED,actor,ra=0x101000)
+        self.assertEqual(cpu.mem[roles.RELEASE_TRACK],actor)
+        cpu.mem[actor+0x948]=11;cpu.mem[actor+0x970]=0
+        cpu=EE(code,cpu.mem);cpu.run(roles.FORCED,actor,ra=0x101000)
+        self.assertEqual(cpu.mem[roles.RELEASE_TRACK],0)
+        flag_byte=cpu.mem.get(actor+0x1085+(0xfb>>3),0)
+        self.assertFalse(flag_byte&(1<<(0xfb&7)))
+
+    def test_full_story_marker_table_does_not_create_an_untracked_exit_flag(self):
+        actor=self.piccolo
+        self.memory.update({actor+0x948:4,actor+0x970:1,
+            actor+0x1085+(0x124>>3):1<<(0x124&7)})
+        for index in range(roles.RELEASE_TRACK_COUNT):
+            self.memory[roles.RELEASE_TRACK+index*4]=0x100000+index*0x1000
+        setter=roles.Assembler(0x1da9d0)
+        setter.addiu(8,4,0x1085+(0xfb>>3));setter.i(36,9,8,0)
+        setter.i(13,9,9,1<<(0xfb&7));setter.i(40,9,8,0)
+        setter.r(8,0,31);setter.emit(0)
+        trampoline=struct.pack('<2I',0x03e00008,0)
+        cpu=EE([(roles.FORCED,roles.forced_action_code()),
+                (roles.TRAMP_FORCED,trampoline),(0x1da9d0,setter.finish())],self.memory)
+        cpu.run(roles.FORCED,actor,ra=0x101000)
+        flag_byte=cpu.mem.get(actor+0x1085+(0xfb>>3),0)
+        self.assertFalse(flag_byte&(1<<(0xfb&7)))
+
     def test_coop_story_adapter_accepts_chapter_rosters_with_extra_enemies(self):
         self.assertTrue(roles.supports_coop_roster(4,0b000111))
         self.assertTrue(roles.supports_coop_roster(6,0b111111))
@@ -287,25 +360,38 @@ class StoryRoleTests(unittest.TestCase):
     def test_final_campaign_manifest_must_retain_story_r3_hooks(self):
         import fresh_team_trainer as trainer
         event_map=(0xffffffff,)*52
+        forced_entry=0x1e12d0
+        forced_original=struct.pack('<2I',0x27bdfff0,0xffb00000)
+        ram=bytearray(forced_entry+8)
+        ram[forced_entry:forced_entry+8]=forced_original
         blocks=[
             (0x259d90,struct.pack('<2I',(2<<26)|(roles.PROMPT>>2),0)),
             (0x259cd0,struct.pack('<I',(3<<26)|(roles.R3>>2))),
             (roles.CONTROL,struct.pack('<I',roles.MAGIC)),
             (roles.EVENT_MAP,struct.pack('<52I',*event_map)),
+            (roles.FORCED,roles.forced_action_code()),
+            (roles.TRAMP_FORCED,forced_original+
+                struct.pack('<2I',(2<<26)|((forced_entry+8)>>2),0)),
+            (forced_entry,struct.pack('<2I',(2<<26)|(roles.FORCED>>2),0)),
+            (roles.RELEASE_TRACK,b'\0'*(roles.RELEASE_TRACK_COUNT*4)),
         ]
         manifest={'blocks':[{'address':address,'data_hex':data.hex()} for address,data in blocks]}
-        self.assertTrue(trainer.verify_history_story_roles_manifest(manifest,b'',event_map))
+        self.assertTrue(trainer.verify_history_story_roles_manifest(manifest,ram,event_map))
         for address,_ in blocks:
             with self.subTest(missing=hex(address)):
                 incomplete={'blocks':[block for block in manifest['blocks'] if block['address']!=address]}
                 with self.assertRaisesRegex(ValueError,'omitted the verified R3/story patch'):
-                    trainer.verify_history_story_roles_manifest(incomplete,b'',event_map)
+                    trainer.verify_history_story_roles_manifest(incomplete,ram,event_map)
 
     def test_story_event_end_restores_player_facade_after_scripted_action(self):
         self.memory.update({roles.CONTROL+8:self.piccolo,roles.CONTROL+20:self.goku,
                             roles.CONTROL+24:1})
-        cpu=EE([(roles.STOP,roles.stop_code(4,0))],self.memory)
+        # The native StopCharMove ABI is (logical side 0/1). A partner's
+        # physical index (2/4/...) must never be passed as that argument.
+        stop_stub=struct.pack('<4I',0x3c080001,0xad040000,0x03e00008,0)
+        cpu=EE([(roles.STOP,roles.stop_code(4,7)),(roles.TRAMP_STOP,stop_stub)],self.memory)
         cpu.run(roles.STOP,0,ra=0x101000)
+        self.assertEqual(cpu.mem[0x10000],0)
         self.assertEqual(cpu.mem[roles.CONTROL+8],self.goku)
         self.assertEqual(cpu.mem[roles.CONTROL+20],0)
         self.assertEqual(cpu.mem[roles.CONTROL+24],0)
@@ -330,7 +416,8 @@ class StoryRoleTests(unittest.TestCase):
             roles.CONTROL+12:0x1d0000})
         code=[(roles.FIND,roles.redundant_event_code()),
               (roles.R3,roles.prompt_code(roles.R3,input_query=True)),
-              (roles.STOP,roles.stop_code(4,0))]
+              (roles.STOP,roles.stop_code(4,0)),
+              (roles.TRAMP_STOP,struct.pack('<4I',0x3c080001,0xad040000,0x03e00008,0))]
         cpu=EE(code,self.memory)
         self.assertEqual(cpu.run(roles.R3,0,ra=0x101000),0x101000)
         self.assertEqual(cpu.mem[roles.CONTROL+12],enemy)
