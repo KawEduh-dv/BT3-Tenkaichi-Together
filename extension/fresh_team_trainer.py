@@ -315,12 +315,14 @@ def history_battle_selection(selection, formation='duo'):
     return dict(selection,participation_mask=mask)
 
 
-def supports_history_story_roster(ram, present_mask):
-    """Check the prepared roster using the live actor-count word, not a local alias."""
+def supports_history_story_roster(ram, present_mask, prepared_actor_count=None):
+    """Check the campaign roster before activation publishes the expanded actor count."""
     import history_story_roles
-    if len(ram)<combat.MODE+8:
-        return False
-    count=struct.unpack_from('<I',ram,combat.MODE+4)[0]
+    count=prepared_actor_count
+    if count is None:
+        if len(ram)<combat.MODE+8:
+            return False
+        count=struct.unpack_from('<I',ram,combat.MODE+4)[0]
     return history_story_roles.supports_coop_roster(count,present_mask)
 
 
@@ -529,6 +531,9 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     story_roles_expected = (SERIAL=='SLUS-21678' and battle_mode=='coop' and len(ram)>=0x333bc4
             and struct.unpack_from('<I',ram,0x331dd0)[0]==1)
     story_role_map = None
+    activation_config=activation.get('config') if isinstance(activation,dict) else None
+    activation_actors=activation_config.get('actors') if isinstance(activation_config,dict) else None
+    story_actor_count=len(activation_actors) if isinstance(activation_actors,(list,tuple)) else None
     if story_roles_expected:
         import history_coop_health
         builders.append(lambda r: history_coop_health.build_memory(r,source=source,present_mask=present_mask,
@@ -541,7 +546,7 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
         # Chapters can load multiple opponents/reserves. The story-role adapter
         # needs the two cooperative bodies, not one exact 1v1 participation mask.
         import history_story_roles
-        if supports_history_story_roster(ram,present_mask):
+        if supports_history_story_roster(ram,present_mask,story_actor_count):
             from history_script_metadata import loaded_events
             story_role_map = history_story_roles.story_event_map(loaded_events(ram))
             builders.append(lambda r: history_story_roles.build_memory(r,source=source))
@@ -578,7 +583,11 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
         print(f'Dragon History R3/story hooks verified in final build; {len(routes)} event roles resolved.',flush=True)
     elif (SERIAL=='SLUS-21678' and battle_mode=='coop' and len(ram)>=0x333bc4
           and struct.unpack_from('<I',ram,0x331dd0)[0]==1):
-        print('WARNING: Dragon History co-op roster did not qualify for story-role hooks; R3 stays native.',flush=True)
+        live_count=(struct.unpack_from('<I',ram,combat.MODE+4)[0]
+                    if len(ram)>=combat.MODE+8 else None)
+        print(f'WARNING: Dragon History co-op roster did not qualify for story-role hooks '
+              f'(activation actors={story_actor_count}, pre-activation count={live_count}, '
+              f'present mask={present_mask!r}); R3 stays native.',flush=True)
     return manifest
 
 

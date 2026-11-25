@@ -68,6 +68,13 @@ class StoryRoleTests(unittest.TestCase):
         self.assertFalse(roles.supports_coop_roster(3,0b000101)) # invalid capacity
         self.assertFalse(roles.supports_coop_roster(4,True))
 
+    def test_history_roster_gate_uses_pending_activation_count(self):
+        import fresh_team_trainer as trainer
+        ram=bytearray(core.MODE+8)
+        struct.pack_into('<I',ram,core.MODE+4,2) # hidden actors are not published yet
+        self.assertFalse(trainer.supports_history_story_roster(ram,0b111))
+        self.assertTrue(trainer.supports_history_story_roster(ram,0b111,10))
+
     def setUp(self):
         self.manager=0x180000;self.goku=0x190000;self.piccolo=0x1a0000
         self.memory={roles.CONTROL:roles.MAGIC,roles.CONTROL+4:self.manager,
