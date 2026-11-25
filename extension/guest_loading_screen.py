@@ -148,6 +148,43 @@ def picture_rectangles(picture):
     return [(0,0,width,height,background)]+image_rectangles(px,key=background)
 
 
+def texture_overlay_packets(canvas, key):
+    """Build an upload frame and a tiny draw-only frame for a keyed menu panel.
+
+    Replaying thousands of untextured rectangles every game frame is expensive
+    on the PS2 GS. Upload the 8-bit indexed panel once, then keep the same
+    transparent texture resident and draw it with one sprite until the menu
+    changes. The panel is used only within one native Dragon History scene.
+    """
+    from PIL import Image, ImageChops
+    import loading_textures
+    import loading_texture_probe as gs
+    if canvas.size != (512, 448):
+        raise ValueError('Keyed menu panels must use the native 512x448 frame')
+    rgb = canvas.convert('RGB')
+    rgba = rgb.convert('RGBA')
+    mask = ImageChops.difference(rgb, Image.new('RGB', rgb.size, tuple(key))).convert('L')
+    rgba.putalpha(mask.point(lambda value: 255 if value else 0))
+    indices, cluts = loading_textures.quantise_foreground(
+        rgba, [dict(x=0, y=0, w=512, h=448)])
+    clut = loading_textures.clut_swizzle_csm1(cluts[0])
+    draw = gs.ad_block([
+        (protocol.fg_tex0(0), gs.TEX0_1),
+        (protocol.NEAREST_TEX1, gs.TEX1_1),
+        (protocol.REGION_CLAMP, gs.CLAMP_1),
+        (protocol.DRAW_TEST, gs.TEST_1),
+        (protocol.STANDARD, gs.ALPHA_1),
+        (protocol.TSPRITE, gs.PRIM),
+    ])
+    sprite = gs.textured_sprite(0, 0, 512, 448, 0, 0, 512*16, 448*16, eop=True)
+    setup = gs.ad_block(protocol.SETUP)
+    steady = setup + draw + sprite
+    upload = (setup + gs.upload_image(protocol.FG_TBP, 8, gs.PSMT8, 512, 448, indices.tobytes())
+              + gs.upload_image(protocol.SLICE_CBP(0), 1, gs.PSMCT32, 16, 16, clut)
+              + gs.ad_block([(0, gs.TEXFLUSH)]) + draw + sprite)
+    return upload, steady
+
+
 KEY = (255, 0, 255)
 
 
@@ -690,6 +727,7 @@ class GuestLoadingScreen:
         self.lock=threading.RLock();self.visible=False;self.teams=[];self.packet=None;self.packet_id=None
         self.foreground=0;self.descriptor=b'';self.layers=None;self.progress=None;self.reset_counters=False
         self.generation=secrets.randbits(31);self.last_sync=0;self.available=False;self.key=None;self.surface=0
+        self._steady_overlay=None
         self.mode,self.humans='teams',1
         # A fixed speed stays; otherwise every new cover re-reads the saved preference.
         self.speed=speed
@@ -793,15 +831,21 @@ class GuestLoadingScreen:
                 with self._ahead_lock:
                     if self._ahead_context==context:self._ahead[key]=(layers,packets)
 
-    def show_picture(self,canvas,surface='menu',client=None,*,transparent_key=None):
+    def show_picture(self,canvas,surface='menu',client=None,*,transparent_key=None,texture_overlay=False):
         with self.lock:
-            # Small native-menu additions can be drawn over the original scene
-            # without replacing its artwork.  The keyed path emits only the
-            # panel's pixels; the normal modal-cover path remains byte-for-byte
-            # unchanged for existing callers.
-            rectangles=(image_rectangles(canvas,key=tuple(transparent_key))
-                        if transparent_key is not None else picture_rectangles(canvas))
-            self.surface=SURFACES[surface];self._publish((gif_packet(rectangles),b'',b''))
+            # Native-scene panels retain the game's art. Upload a PSMT8 alpha
+            # overlay once, then use a one-sprite packet on later frames.
+            self._steady_overlay=None
+            self.surface=SURFACES[surface]
+            if texture_overlay:
+                if transparent_key is None:raise ValueError('A textured menu overlay needs a transparent key')
+                upload,steady=texture_overlay_packets(canvas,transparent_key)
+                self._steady_overlay=steady;packet=upload
+            else:
+                rectangles=(image_rectangles(canvas,key=tuple(transparent_key))
+                            if transparent_key is not None else picture_rectangles(canvas))
+                packet=gif_packet(rectangles)
+            self._publish((packet,b'',b''))
             self.key=None;self.layers=None
             return self._show(client)
 
@@ -900,7 +944,7 @@ class GuestLoadingScreen:
     def hide(self,client=None):
         from pine import PineClient,PineError
         with self.lock:
-            self.visible=False;self._stale_since=None;invalidate_buffers()
+            self.visible=False;self._stale_since=None;self._steady_overlay=None;invalidate_buffers()
             try:
                 with nullcontext(client) if client is not None else PineClient(timeout=3) as p:
                     if p.read(HOOK,4)==code_pieces()[-1][1]:
@@ -918,9 +962,17 @@ class GuestLoadingScreen:
         data=client.read(CONTROL,DRAWN_LATCH+4)
         magic,ptr,size,draws,age,generation,consumed=struct.unpack_from('<7I',data)
         counter=struct.unpack_from('<I',data,MENU_FRAMES)[0] if self.surface else draws
-        return (magic==MAGIC and ptr in BUFFERS and consumed==ptr and counter>0
-                and bool(struct.unpack_from('<I',data,DRAWN_LATCH)[0])
-                and generation==self.generation and size==len(self.packet))
+        drawn=(magic==MAGIC and ptr in BUFFERS and consumed==ptr and counter>0
+               and bool(struct.unpack_from('<I',data,DRAWN_LATCH)[0])
+               and generation==self.generation and size==len(self.packet))
+        if drawn and self._steady_overlay is not None:
+            # The upload frame was drawn. Switch immediately so the GS does
+            # not retransmit the 224 KiB indexed image on every game frame.
+            steady,self._steady_overlay=self._steady_overlay,None
+            with self.lock:
+                self._publish((steady,b'',b''))
+                self.sync(force=True,client=client)
+        return drawn
 
     def wait_drawn(self,timeout=2):
         """A submitted packet is not a rendered frame; wait for the guest ACK."""

@@ -303,9 +303,17 @@ class Observation:
                 self.accepted_mode == 1 and self.scene_state == 8)
 
     @property
+    def native_battle(self):
+        # LOOP_FLAG also rises during the title's attract/demo playback. The
+        # scene manager stays at 1 there, while an actual native match enters
+        # scene 4. Do not report the demo as a playable/original-menu match.
+        return self.loop == 1 and self.scene_state == 4 and self.battle_state in (2, 3)
+
+    @property
     def pending_reason(self):
         # Fixed sentences: the Play window shows them through say_text (Spanish in localization.ES).
-        if self.loop != 1 and not self.history_arena: return 'Waiting in the game menus until a match starts.'
+        if not self.native_battle and not self.history_arena:
+            return 'Waiting in the game menus until a match starts.'
         if self.mode != getattr(self, 'accepted_mode', 0): return 'This game mode is not one the mod prepares, so it plays normally.'
         if self.replay != 0: return 'Replay playback: the mod does not change replays.'
         if self.battle_state not in (2, 3): return 'Waiting for the battle to finish loading.'
@@ -338,7 +346,7 @@ class Observation:
 
     def summary(self):
         return {key: getattr(self, key) for key in ('status', 'loop', 'battle_state', 'scene_state', 'mode',
-            'accepted_mode', 'history_arena', 'streaming', 'manager', 'array', 'count', 'initialised',
+            'accepted_mode', 'history_arena', 'native_battle', 'streaming', 'manager', 'array', 'count', 'initialised',
             'rows', 'slots', 'hp', 'actions', 'characters', 'replay', 'team_mode', 'heap1',
             'native_hook', 'changed_native', 'hold')}
 
@@ -2645,6 +2653,10 @@ class Autopilot:
                 except (OSError, PineError) as error:
                     self.pine_hiccup(error, 'match'); continue
                 if not self.preparation_enabled:
+                    if not obs.native_battle and not obs.history_arena:
+                        self.state='MENU'
+                        self.report(say_text(obs.pending_reason),obs,'waiting')
+                        continue
                     self.state='BATTLE'
                     self.report(say(SAY_ORIGINAL_MENU),obs)
                     continue

@@ -5,6 +5,7 @@ import autopilot
 import history_setup_menu as menu
 import mod_settings
 import native_mode_menu
+from fresh_team_trainer import history_battle_selection,supports_history_story_roster,combat
 from test_history_story_roles import EE
 
 
@@ -41,6 +42,15 @@ class StorySetupModelTests(unittest.TestCase):
         packet=gif_packet(image_rectangles(image,key=(255,0,255)))
         self.assertLess(len(packet),CAPACITY)
 
+    def test_inline_panel_uploads_once_then_uses_a_single_sprite(self):
+        from guest_loading_screen import texture_overlay_packets
+        c=menu.Controller()
+        for page in ('players','rules'):
+            c.page=page
+            upload,steady=texture_overlay_packets(c.picture(),(255,0,255))
+            self.assertGreater(len(upload),512*448//2)  # indexed image + CLUT, once per changed page
+            self.assertLess(len(steady),512)            # setup + texture state + one sprite per game frame
+
     def test_select_cannot_dismiss_or_commit_the_question(self):
         c=menu.Controller()
         for _ in range(4):self.assertIsNone(c.press(1))
@@ -56,6 +66,23 @@ class StorySetupModelTests(unittest.TestCase):
         self.assertEqual(c.ally_hp,400)
         for _ in range(30):c.press(menu.LEFT)
         self.assertEqual(c.ally_hp,25)
+
+    def test_campaign_selection_applies_duo_mask_before_actor_setup(self):
+        selected=dict(members_per_side=5,participation_mask=343,selected_fighter_count=6)
+        effective=history_battle_selection(selected,'duo')
+        self.assertEqual(effective['participation_mask'],0b111)
+        self.assertEqual(selected['participation_mask'],343)
+
+    def test_time_x_time_keeps_the_authored_campaign_roster(self):
+        selected=dict(members_per_side=5,participation_mask=343,selected_fighter_count=6)
+        self.assertEqual(history_battle_selection(selected,'time_x_time')['participation_mask'],343)
+
+    def test_story_adapter_checks_the_prepared_live_roster_count(self):
+        ram=bytearray(combat.MODE+8)
+        ram[combat.MODE+4:combat.MODE+8]=(10).to_bytes(4,'little')
+        self.assertTrue(supports_history_story_roster(ram,0b111))
+        self.assertFalse(supports_history_story_roster(ram,0b011))
+        self.assertFalse(supports_history_story_roster(bytearray(8),0b111))
 
 
 class StorySetupHostIntegrationTests(unittest.TestCase):

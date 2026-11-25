@@ -64,6 +64,72 @@ def change_members(commands):
     return changes
 
 
+def story_role_targets(commands):
+    """Return story actors explicitly targeted by a following scripted action.
+
+    Battle command 8 encodes ChangeMember (16..20), transformations (21/22),
+    fusion (23), and forced actions (25..29). Status commands 13/14 may set a
+    named member's HP directly, including scripted KOs. Track the most recent
+    authored member for each side so an action's identity is independent of the
+    controller that happened to trigger its event.
+
+    The command meanings are from the matching retail script handler table;
+    unknown or underspecified actions deliberately produce no inferred role.
+    """
+    active = {}
+    targets = []
+
+    def integer(argument):
+        if not isinstance(argument, dict) or type(argument.get('integer')) is not int:
+            raise ValueError('Story role command has no integer operand')
+        return argument['integer']
+
+    for command in commands:
+        if not isinstance(command, dict) or command.get('kind') != 1:
+            continue
+        opcode = command.get('opcode')
+        args = command.get('args', ())
+        if opcode == 8 and len(args) >= 2:
+            try:
+                what = integer(args[0]) & 0xffffffff
+                action = what & 0xfff
+                side = (what >> 15) & 1
+            except (ValueError, TypeError):
+                continue
+            if 16 <= action <= 20:
+                active[side] = action - 16
+            elif action in (21, 22, 23, 25, 26, 27, 28, 29):
+                if side in active:
+                    targets.append(dict(side=side, slot=active[side], kind='technique'))
+        elif opcode in (13, 14):
+            side = opcode - 13
+            options = command.get('options', ())
+            named_member = None
+            hp_values = []
+            try:
+                for option in options:
+                    if not isinstance(option, dict):
+                        continue
+                    letter = option.get('flag')
+                    values = option.get('args', ())
+                    if letter == 'C' and values:
+                        named_member = integer(values[0])
+                    elif letter == 'h' and values:
+                        hp_values.append(integer(values[0]))
+            except (ValueError, TypeError):
+                continue
+            # In command 13/14, -h <= 0 lowers HP to zero and fires the native
+            # KO triggers. Positive -h heals; -H adds HP and is not a death.
+            # Multiple writes in a single status command may include setup and
+            # cleanup values. Treat them as ambiguous instead of calling a KO
+            # scripted based on one intermediate nonpositive value.
+            if len(hp_values)==1 and hp_values[0] <= 0:
+                slot = named_member if named_member is not None else active.get(side)
+                if type(slot) is int and 0 <= slot < 5:
+                    targets.append(dict(side=side, slot=slot, kind='scripted_ko'))
+    return tuple(targets)
+
+
 def replacement_prompt(flags):
     """BtlScript event kind 1 means ChangeMember; kind 2 means UseSkill."""
     return type(flags) is int and flags&1==1 and flags&0xc0==0x40

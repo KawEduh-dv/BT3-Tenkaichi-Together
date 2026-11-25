@@ -109,6 +109,13 @@ def stop_code(count,present_mask):
         a.addiu(4,0,physical);a.call(TRAMP_STOP)
         a.label(f'next_{physical}')
     a.li(8,CONTROL);a.sw(0,8,28)
+    a.lw(9,8,24);a.branch(4,9,0,'role_restored')
+    a.addiu(10,0,1);a.branch(4,9,10,'restore_role0')
+    a.lw(9,8,20);a.sw(9,8,12);a.jump('clear_role')
+    a.label('restore_role0');a.lw(9,8,20);a.sw(9,8,8)
+    a.label('clear_role');a.sw(0,8,20);a.sw(0,8,24)
+    a.lw(9,8,16);a.addiu(9,9,1);a.sw(9,8,16)
+    a.label('role_restored')
     a.i(55,31,29,0);a.i(55,4,29,8);a.addiu(29,29,0x20);restore(a);a.jr()
     a.label('native');a.i(55,31,29,0);a.i(55,4,29,8)
     a.addiu(29,29,0x20);restore(a);a.jump(TRAMP_STOP)
@@ -116,20 +123,27 @@ def stop_code(count,present_mask):
 
 
 def story_event_map(events):
-    """Map authored ChangeMember destinations, including called GSC actions.
+    """Map the authored actor for each event, even when it contains several swaps.
 
-    An event is mapped only when its complete call graph names exactly one
-    replacement. Branching/unknown graphs remain native instead of risking a
-    wrong prompt suppression. The retail campaign's 720 events are audited
-    separately against this rule.
+    A role explicitly followed by a scripted technique or KO is more reliable
+    than the first/last replacement in an event. If several distinct scripted
+    actors remain possible, retain the native event path instead of guessing.
     """
-    from history_script_metadata import flatten_action,change_members
+    from history_script_metadata import flatten_action,change_members,story_role_targets
     result=[0xffffffff]*52
     for label in events:
         if type(label) is not int or not 10000<=label<10052:continue
-        try:changes=change_members(flatten_action(events,label))
+        try:
+            commands=flatten_action(events,label)
+            changes=change_members(commands)
+            targets=story_role_targets(commands)
         except (ValueError,KeyError):continue
-        if len(changes)==1:
+        actors={(target['side'],target['slot']) for target in targets
+                if target['side'] in (0,1) and target['slot'] in range(5)}
+        if len(actors)==1:
+            side,slot=next(iter(actors))
+            result[label-10000]=side*8+slot
+        elif not actors and len(changes)==1:
             change=changes[0]
             if change['side'] in (0,1) and change['slot'] in range(5):
                 result[label-10000]=change['side']*8+change['slot']
@@ -148,6 +162,7 @@ def redundant_event_code():
     a.li(11,EVENT_MAP);a.r(0,10,0,10,2);a.r(0x21,11,11,10);a.lw(11,11)
     a.addiu(12,0,-1);a.branch(4,11,12,'no')
     a.i(12,5,11,7);a.r(2,4,0,11,3)
+    a.move(3,4) # return authored side in v1 for the caller's facade slot
     a.li(12,core.POINTERS);a.li(13,part.PRESENT);a.lw(14,13,4);a.lw(13,13)
     a.r(0x27,14,14,0);a.r(0x24,13,13,14)
     a.li(9,core.MODE);a.lw(10,9,4);a.move(11,4)
@@ -166,17 +181,26 @@ def redundant_event_code():
 def prompt_code(address,*,input_query):
     a=Assembler(address);save(a);a.addiu(29,29,-0x20)
     for register,offset in ((31,0),(4,8),(5,16)):a.i(63,register,29,offset)
-    a.call(FIND);a.move(3,2)
+    a.call(FIND);a.move(6,3);a.move(3,2)
     for register,offset in ((31,0),(4,8),(5,16)):a.i(55,register,29,offset)
     a.addiu(29,29,0x20);restore(a)
     a.branch(4,3,0,'native')
+    # Snapshot the player facade once per event, then route the story facade
+    # to its authored actor. The R3 caller does not choose the performer.
+    a.li(8,CONTROL);a.lw(9,8,24);a.branch(5,9,0,'role_saved')
+    a.branch(4,6,0,'save_role0')
+    a.lw(9,8,12);a.sw(9,8,20);a.addiu(9,0,2);a.sw(9,8,24);a.jump('role_saved')
+    a.label('save_role0');a.lw(9,8,8);a.sw(9,8,20);a.addiu(9,0,1);a.sw(9,8,24)
+    a.label('role_saved');a.branch(4,6,0,'store_role0');a.sw(3,8,12);a.jump('role_stored')
+    a.label('store_role0');a.sw(3,8,8)
+    a.label('role_stored');a.lw(9,8,16);a.addiu(9,9,1);a.sw(9,8,16)
     if input_query:
         # The native event still waits for its own ready/combat conditions.
         # Its redundant body-change trigger then runs without an R3 prompt.
         a.addiu(2,0,1);a.jr()
     else:a.jump(0x22d9b0)
     a.label('native');a.jump(0x129728 if input_query else TRAMP_PROMPT)
-    return a.finish()
+    result=a.finish();assert len(result)<0x400;return result
 
 
 def build_memory(ram, *, source='<story-role-probe>'):

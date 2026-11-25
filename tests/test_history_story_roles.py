@@ -101,14 +101,14 @@ class StoryRoleTests(unittest.TestCase):
         self.assertEqual(cpu.mem[roles.CONTROL+8],self.goku)
 
     def test_authored_skill_uses_the_living_character_already_controlled_by_p2(self):
-        request=0x1b0000
+        request=0x334464
         self.memory.update({0x333f10:request,request+8:10005})
         cpu,exit_at=self.change(1)
         self.assertEqual(exit_at,0x100000)
         self.assertEqual(cpu.mem[roles.CONTROL+8],self.piccolo)
 
     def test_authored_skill_keeps_native_change_when_target_is_not_in_arena(self):
-        request=0x1b0000
+        request=0x334464
         self.memory.update({0x333f10:request,request+8:10005,part.PRESENT:1})
         _,exit_at=self.change(1)
         self.assertEqual(exit_at,roles.TRAMP0)
@@ -142,6 +142,45 @@ class StoryRoleTests(unittest.TestCase):
         mapped=roles.story_event_map(events)
         self.assertEqual(mapped[0],0xffffffff) # missing call target
         self.assertEqual(mapped[1],0xffffffff) # multiple authored replacements
+
+    def test_story_event_uses_scripted_technique_actor_not_r3_caller(self):
+        change_tien={'kind':1,'opcode':8,'args':[{'integer':16},{'integer':0}], 'address':1}
+        change_chaotzu={'kind':1,'opcode':8,'args':[{'integer':17},{'integer':0}], 'address':2}
+        ultimate={'kind':1,'opcode':8,'args':[{'integer':29},{'integer':0}], 'address':3}
+        events={10004:{'commands':[change_tien,change_chaotzu,ultimate]}}
+        self.assertEqual(roles.story_event_map(events)[4],1)
+
+    def test_story_event_preserves_the_scripted_side_for_routed_roles(self):
+        enemy={'kind':1,'opcode':8,'args':[{'integer':0x8000|16},{'integer':0}], 'address':1}
+        ultimate={'kind':1,'opcode':8,'args':[{'integer':0x8000|29},{'integer':0}], 'address':2}
+        self.assertEqual(roles.story_event_map({10007:{'commands':[enemy,ultimate]}})[7],8)
+
+    def test_story_event_maps_scripted_ko_to_authored_member(self):
+        change_chaotzu={'kind':1,'opcode':8,'args':[{'integer':17},{'integer':0}], 'address':1}
+        scripted_ko={'kind':1,'opcode':13,'args':[],
+                     'options':[{'flag':'h','args':[{'integer':0}]}], 'address':2}
+        events={10005:{'commands':[change_chaotzu,scripted_ko]}}
+        self.assertEqual(roles.story_event_map(events)[5],1)
+
+    def test_only_unambiguous_nonpositive_script_hp_is_classified_as_scripted_ko(self):
+        from history_script_metadata import story_role_targets
+        authored={'kind':1,'opcode':8,'args':[{'integer':17},{'integer':0}], 'address':1}
+        def status(values):
+            return {'kind':1,'opcode':13,'args':[],
+                    'options':[{'flag':'h','args':[{'integer':value}]} for value in values],
+                    'address':2}
+        self.assertEqual(story_role_targets([authored,status([0])]),
+                         (dict(side=0,slot=1,kind='scripted_ko'),))
+        self.assertEqual(story_role_targets([authored,status([100])]),())
+        self.assertEqual(story_role_targets([authored,status([0,100])]),())
+
+    def test_multiple_scripted_performers_stay_native_instead_of_guessing(self):
+        change_chaotzu={'kind':1,'opcode':8,'args':[{'integer':17},{'integer':0}], 'address':1}
+        chaos_ultimate={'kind':1,'opcode':8,'args':[{'integer':29},{'integer':0}], 'address':2}
+        change_tien={'kind':1,'opcode':8,'args':[{'integer':16},{'integer':0}], 'address':3}
+        tien_technique={'kind':1,'opcode':8,'args':[{'integer':27},{'integer':0}], 'address':4}
+        events={10006:{'commands':[change_chaotzu,chaos_ultimate,change_tien,tien_technique]}}
+        self.assertEqual(roles.story_event_map(events)[6],0xffffffff)
 
     def test_absent_defeated_and_consumed_partners_are_not_selected(self):
         for address,value in ((part.PRESENT,3),(part.CONSUMED,4),(self.piccolo+0x9e4+0xa4,0)):
@@ -200,6 +239,99 @@ class StoryRoleTests(unittest.TestCase):
                 self.memory[roles.CONTROL+28]=bypass
                 cpu=EE(code,self.memory)
                 self.assertEqual(cpu.run(roles.PHYSICAL,0,ra=ra),core.PHYSICAL+8)
+
+    def test_story_r3_prompt_routes_script_facade_to_authored_actor(self):
+        self.assertEqual(self.detect(10005),self.piccolo)
+        request=0x334464
+        self.memory.update({0x333f10:request,request:2,request+8:10005,
+            request+12:0x333d0c+5,roles.EVENT_MAP+(10005-10000)*4:1})
+        code=[(roles.FIND,roles.redundant_event_code()),
+              (roles.R3,roles.prompt_code(roles.R3,input_query=True))]
+        cpu=EE(code,self.memory)
+        exit_at=cpu.run(roles.R3,0,ra=0x101000)
+        self.assertEqual(exit_at,0x101000)
+        self.assertEqual(cpu.r[2],1)
+        self.assertEqual(cpu.mem[roles.CONTROL+8],self.piccolo)
+        self.assertEqual(cpu.mem[roles.CONTROL+20],self.goku)
+        self.assertEqual(cpu.mem[roles.CONTROL+24],1)
+
+    def test_nappa_tien_p1_r3_keeps_chaotzu_as_the_scripted_ultimate_actor(self):
+        # Nappa scenario: the story assigns Tien, then Chiaotzu, before the
+        # authored ultimate. P1's R3 input must not replace that authored role.
+        change_tien={'kind':1,'opcode':8,'args':[{'integer':16},{'integer':0}], 'address':1}
+        change_chaotzu={'kind':1,'opcode':8,'args':[{'integer':17},{'integer':0}], 'address':2}
+        ultimate={'kind':1,'opcode':8,'args':[{'integer':25},{'integer':0}], 'address':3}
+        events={10005:{'commands':[change_tien,change_chaotzu,ultimate]}}
+        self.assertEqual(roles.story_event_map(events)[5],1)  # allied story seat 2
+
+        request=0x334464
+        self.memory.update({0x333f10:request,request:2,request+8:10005,
+            request+12:0x333d0c+5,roles.EVENT_MAP+5*4:1,
+            roles.CONTROL+8:self.goku,roles.CONTROL+12:0x1b0000})
+        code=[(roles.FIND,roles.redundant_event_code()),
+              (roles.R3,roles.prompt_code(roles.R3,input_query=True))]
+        cpu=EE(code,self.memory)
+        cpu.run(roles.R3,0,ra=0x101000)  # trigger is P1; authored actor stays P2
+        self.assertEqual(cpu.r[2],1)
+        self.assertEqual(cpu.mem[core.POINTERS+8],self.piccolo)
+        self.assertEqual(cpu.mem[roles.CONTROL+8],self.piccolo)
+        self.assertEqual(cpu.mem[roles.CONTROL+12],0x1b0000)
+
+    def test_final_campaign_manifest_must_retain_story_r3_hooks(self):
+        import fresh_team_trainer as trainer
+        event_map=(0xffffffff,)*52
+        blocks=[
+            (0x259d90,struct.pack('<2I',(2<<26)|(roles.PROMPT>>2),0)),
+            (0x259cd0,struct.pack('<I',(3<<26)|(roles.R3>>2))),
+            (roles.CONTROL,struct.pack('<I',roles.MAGIC)),
+            (roles.EVENT_MAP,struct.pack('<52I',*event_map)),
+        ]
+        manifest={'blocks':[{'address':address,'data_hex':data.hex()} for address,data in blocks]}
+        self.assertTrue(trainer.verify_history_story_roles_manifest(manifest,b'',event_map))
+        for address,_ in blocks:
+            with self.subTest(missing=hex(address)):
+                incomplete={'blocks':[block for block in manifest['blocks'] if block['address']!=address]}
+                with self.assertRaisesRegex(ValueError,'omitted the verified R3/story patch'):
+                    trainer.verify_history_story_roles_manifest(incomplete,b'',event_map)
+
+    def test_story_event_end_restores_player_facade_after_scripted_action(self):
+        self.memory.update({roles.CONTROL+8:self.piccolo,roles.CONTROL+20:self.goku,
+                            roles.CONTROL+24:1})
+        cpu=EE([(roles.STOP,roles.stop_code(4,0))],self.memory)
+        cpu.run(roles.STOP,0,ra=0x101000)
+        self.assertEqual(cpu.mem[roles.CONTROL+8],self.goku)
+        self.assertEqual(cpu.mem[roles.CONTROL+20],0)
+        self.assertEqual(cpu.mem[roles.CONTROL+24],0)
+
+    def test_unmapped_or_absent_story_actor_keeps_current_facade_role(self):
+        request=0x334464
+        self.memory.update({0x333f10:request,request:2,request+8:10005,
+            request+12:0x333d0c+5,roles.EVENT_MAP+(10005-10000)*4:1,
+            part.PRESENT:1})
+        self.memory[roles.CONTROL+8]=self.goku
+        code=[(roles.FIND,roles.redundant_event_code()),
+              (roles.R3,roles.prompt_code(roles.R3,input_query=True))]
+        cpu=EE(code,self.memory)
+        self.assertEqual(cpu.run(roles.R3,0,ra=0x101000),0x129728)
+        self.assertEqual(cpu.mem[roles.CONTROL+8],self.goku)
+
+    def test_scripted_enemy_side_routes_and_restores_its_own_facade_slot(self):
+        request=0x334464;enemy=0x1c0000
+        self.memory.update({0x333f10:request,request:2,request+8:10007,
+            request+12:0x333d0c+7,roles.EVENT_MAP+7*4:8,
+            core.POINTERS+4:enemy,enemy:1,enemy+0x994:0,enemy+0x9e4:40000,
+            roles.CONTROL+12:0x1d0000})
+        code=[(roles.FIND,roles.redundant_event_code()),
+              (roles.R3,roles.prompt_code(roles.R3,input_query=True)),
+              (roles.STOP,roles.stop_code(4,0))]
+        cpu=EE(code,self.memory)
+        self.assertEqual(cpu.run(roles.R3,0,ra=0x101000),0x101000)
+        self.assertEqual(cpu.mem[roles.CONTROL+12],enemy)
+        self.assertEqual(cpu.mem[roles.CONTROL+20],0x1d0000)
+        self.assertEqual(cpu.mem[roles.CONTROL+24],2)
+        cpu.run(roles.STOP,0,ra=0x102000)
+        self.assertEqual(cpu.mem[roles.CONTROL+12],0x1d0000)
+        self.assertEqual(cpu.mem[roles.CONTROL+24],0)
 
 
 if __name__=='__main__':unittest.main()

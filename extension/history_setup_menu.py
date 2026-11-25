@@ -159,7 +159,9 @@ class Controller:
         edges=p.read_u32(CONTROL+12)&0xffff
         if edges:p.write_u32(CONTROL+12,0)
         if self.dirty:
-            self.screen.show_picture(self.picture(),surface='owned',client=p,transparent_key=(255,0,255));self.dirty=False
+            self.screen.show_picture(self.picture(),surface='owned',client=p,
+                                     transparent_key=(255,0,255),texture_overlay=True)
+            self.dirty=False
         else:self.screen.sync(client=p)
         if not self.screen.presented(p):return None
         self.presented_once=True

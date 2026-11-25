@@ -304,6 +304,49 @@ def actor_config(ram, mode, selection=None, battle_mode='teams', humans=1, assig
                              actor_manager=manager, ai_manager=u(A(0x2FEB10)), creation_header=creation.HEADER))
 
 
+def history_battle_selection(selection, formation='duo'):
+    """Return the effective actor mask for a captured Dragon History roster."""
+    import history_coop_rules
+    count=2*selection['members_per_side']
+    mask=history_coop_rules.campaign_participation_mask(
+        selection['participation_mask'],count,formation)
+    print(f"Dragon History formation {formation}: {mask.bit_count()} active fighters "
+          f"from {selection['selected_fighter_count']} selected.",flush=True)
+    return dict(selection,participation_mask=mask)
+
+
+def supports_history_story_roster(ram, present_mask):
+    """Check the prepared roster using the live actor-count word, not a local alias."""
+    import history_story_roles
+    if len(ram)<combat.MODE+8:
+        return False
+    count=struct.unpack_from('<I',ram,combat.MODE+4)[0]
+    return history_story_roles.supports_coop_roster(count,present_mask)
+
+
+def verify_history_story_roles_manifest(manifest, ram, event_map=None):
+    """Reject a Dragon History co-op build that silently omits its R3/story hooks."""
+    import history_story_roles as roles
+    from history_script_metadata import loaded_events
+    if event_map is None:
+        event_map = roles.story_event_map(loaded_events(ram))
+    expected = (
+        (0x259d90, struct.pack('<2I', (2 << 26) | (roles.PROMPT >> 2), 0)),
+        (0x259cd0, struct.pack('<I', (3 << 26) | (roles.R3 >> 2))),
+        (roles.CONTROL, struct.pack('<I', roles.MAGIC)),
+        (roles.EVENT_MAP, struct.pack('<52I', *event_map)),
+    )
+    blocks = [(int(block['address']), bytes.fromhex(block['data_hex']))
+              for block in manifest['blocks']]
+    for address, value in expected:
+        covered = next((data[address-start:address-start+len(value)]
+                        for start, data in blocks
+                        if start <= address and address+len(value) <= start+len(data)), None)
+        if covered != value:
+            raise ValueError(f'Dragon History co-op build omitted the verified R3/story patch at {address:08X}')
+    return True
+
+
 def final_team_manifest(ram, activation, source, play_intro=False, pause_others=True, pause_mode=None, present_mask=None,
                         settings=None, battle_mode='teams', humans=1, assignment=None, mission=None, gauntlet=None):
     """Compose all playability guards before exposing the first ready frame."""
@@ -483,8 +526,10 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
     # The optional native HUD style re-points the classic draw calls installed above, so it is the last builder.
     import native_hud_style
     builders.append(lambda r: native_hud_style.build_memory(r,settings=preferences,source=source))
-    if (SERIAL=='SLUS-21678' and battle_mode=='coop' and len(ram)>=0x333bc4
-            and struct.unpack_from('<I',ram,0x331dd0)[0]==1):
+    story_roles_expected = (SERIAL=='SLUS-21678' and battle_mode=='coop' and len(ram)>=0x333bc4
+            and struct.unpack_from('<I',ram,0x331dd0)[0]==1)
+    story_role_map = None
+    if story_roles_expected:
         import history_coop_health
         builders.append(lambda r: history_coop_health.build_memory(r,source=source,present_mask=present_mask,
             ally_percent=settings.get('history_ally_hp_percent',100),
@@ -496,8 +541,12 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
         # Chapters can load multiple opponents/reserves. The story-role adapter
         # needs the two cooperative bodies, not one exact 1v1 participation mask.
         import history_story_roles
-        if history_story_roles.supports_coop_roster(u(combat.MODE+4),present_mask):
+        if supports_history_story_roster(ram,present_mask):
+            from history_script_metadata import loaded_events
+            story_role_map = history_story_roles.story_event_map(loaded_events(ram))
             builders.append(lambda r: history_story_roles.build_memory(r,source=source))
+        else:
+            story_roles_expected = False
     import lockon_threat
     # Hook lock-off last so story adapters and all preceding builders are visible,
     # then let the threat overlay wrap the final draw path.
@@ -515,12 +564,22 @@ def final_team_manifest(ram, activation, source, play_intro=False, pause_others=
         except ValueError:capacity=None
         with battle_mode_policy.assumed_capacity(ram,capacity) as source_ram:
             if battle_mode_policy.known_capacity(source_ram) is None:
-                return compose_manifests(ram, builders)
-            manifest,composed=_compose(ram, builders)
-        try:agrees=battle_mode_policy.installed_capacity(composed)==capacity
-        except ValueError:agrees=False
-        del composed
-        return manifest if agrees else compose_manifests(ram, builders)
+                manifest=compose_manifests(ram, builders)
+            else:
+                manifest,composed=_compose(ram, builders)
+                try:agrees=battle_mode_policy.installed_capacity(composed)==capacity
+                except ValueError:agrees=False
+                del composed
+                if not agrees:manifest=compose_manifests(ram, builders)
+    if story_roles_expected:
+        verify_history_story_roles_manifest(manifest,ram,story_role_map)
+        routes=[] if story_role_map is None else [(10000+i,value) for i,value in enumerate(story_role_map)
+                                                  if value!=0xffffffff]
+        print(f'Dragon History R3/story hooks verified in final build; {len(routes)} event roles resolved.',flush=True)
+    elif (SERIAL=='SLUS-21678' and battle_mode=='coop' and len(ram)>=0x333bc4
+          and struct.unpack_from('<I',ram,0x331dd0)[0]==1):
+        print('WARNING: Dragon History co-op roster did not qualify for story-role hooks; R3 stays native.',flush=True)
+    return manifest
 
 
 # Every earlier session leaves its recorded slots behind (a closed PCSX2 included), so this is routine, not a fault.
@@ -892,13 +951,8 @@ class Session:
         selection = capture(ram,minimum_members=minimum_members)
         battle_selection=selection
         if self.history_coop:
-            import history_coop_rules
-            count=2*selection['members_per_side']
-            mask=history_coop_rules.campaign_participation_mask(selection['participation_mask'],count,
-                self.settings.get('history_formation','duo'))
-            battle_selection=dict(selection,participation_mask=mask)
-            log(f"Dragon History formation {self.settings.get('history_formation','duo')}: "
-                f"{mask.bit_count()} active fighters from {selection['selected_fighter_count']} selected.")
+            battle_selection=history_battle_selection(
+                selection,self.settings.get('history_formation','duo'))
         if mission is not None:
             import story_runtime
             mission=story_runtime.validate_selection(mission,selection,ram,self.humans,self.assignment)
