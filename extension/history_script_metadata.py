@@ -75,20 +75,36 @@ def story_role_targets(commands):
 
     The command meanings are from the matching retail script handler table;
     unknown or underspecified actions deliberately produce no inferred role.
+    Some finishers do not ChangeMember in their own action. For these, require
+    the same explicit member in both a scene command (901) and a cue (1603).
     """
     active = {}
     targets = []
+    scene_members = set()
+    cue_members = set()
 
     def integer(argument):
         if not isinstance(argument, dict) or type(argument.get('integer')) is not int:
             raise ValueError('Story role command has no integer operand')
         return argument['integer']
 
+    def member(argument):
+        value = integer(argument) & 0xffffffff
+        side, slot = (value >> 15) & 1, value & 0x7fff
+        return (side, slot) if slot < 5 else None
+
     for command in commands:
         if not isinstance(command, dict) or command.get('kind') != 1:
             continue
         opcode = command.get('opcode')
         args = command.get('args', ())
+        if opcode in (901, 1603) and args:
+            try:
+                selected = member(args[0])
+            except (ValueError, TypeError):
+                selected = None
+            if selected is not None:
+                (scene_members if opcode == 901 else cue_members).add(selected)
         if opcode == 8 and len(args) >= 2:
             try:
                 what = integer(args[0]) & 0xffffffff
@@ -101,6 +117,12 @@ def story_role_targets(commands):
             elif action in (21, 22, 23, 25, 26, 27, 28, 29):
                 if side in active:
                     targets.append(dict(side=side, slot=active[side], kind='technique'))
+                elif action in (25, 26, 27, 28, 29):
+                    candidates={slot for found_side,slot in cue_members if found_side == side}
+                    if len(candidates)==1:
+                        slot=next(iter(candidates))
+                        if (side,slot) in scene_members:
+                            targets.append(dict(side=side,slot=slot,kind='technique'))
         elif opcode in (13, 14):
             side = opcode - 13
             options = command.get('options', ())

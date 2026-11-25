@@ -1,6 +1,6 @@
 import struct
 import unittest
-from history_script_metadata import action,replacement_prompt,available_replacement,flatten_action
+from history_script_metadata import action,replacement_prompt,available_replacement,flatten_action,story_role_targets
 
 
 class StoryScriptMetadataTests(unittest.TestCase):
@@ -51,6 +51,20 @@ class StoryScriptMetadataTests(unittest.TestCase):
         call=dict(commands=[dict(kind=2,opcode=1000)])
         with self.assertRaises(ValueError):flatten_action({1000:call},1000)
         with self.assertRaises(ValueError):flatten_action({1000:call},42)
+
+    def test_nappa_finisher_keeps_chaotzu_without_a_member_change(self):
+        def command(opcode,*values):
+            return dict(kind=1,opcode=opcode,args=[dict(integer=value) for value in values])
+        commands=[command(901,1,39),command(1603,1,11),command(8,29,-1)]
+        self.assertEqual(story_role_targets(commands),(
+            dict(side=0,slot=1,kind='technique'),))
+
+    def test_ambiguous_scene_cues_do_not_assign_a_finisher(self):
+        def command(opcode,*values):
+            return dict(kind=1,opcode=opcode,args=[dict(integer=value) for value in values])
+        commands=[command(901,1,39),command(1603,1,11),
+                  command(901,2,39),command(1603,2,12),command(8,29,-1)]
+        self.assertEqual(story_role_targets(commands),())
 
 
 if __name__=='__main__':unittest.main()
