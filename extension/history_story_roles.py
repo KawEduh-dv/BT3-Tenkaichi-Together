@@ -98,16 +98,11 @@ def stop_code(count,present_mask):
     a=Assembler(STOP);save(a);a.addiu(29,29,-0x20)
     a.i(63,31,29,0);a.i(63,4,29,8)
     scope(a,'native');a.branch(5,4,0,'native')
-    # EndEvent stops native sides 0/1. With two allied bodies, stop the
-    # scripted motion on each living ally before giving controls back.
+    # EndEvent passes a logical side (0/1), not a physical actor index. Keep
+    # that argument intact: the facade getter above resolves the authored
+    # story role to the participating body while the native stop runs.
     a.addiu(9,0,1);a.sw(9,8,28)
-    for physical in range(0,count,2):
-        if not present_mask&(1<<physical):continue
-        a.li(8,core.POINTERS+physical*4);a.lw(8,8);a.lw(9,8,0x994)
-        a.li(10,0xa4);a.r(0x19,0,9,10);a.r(0x12,9,0,0)
-        a.r(0x21,9,9,8);a.lw(9,9,0x9e4);a.branch(6,9,0,f'next_{physical}')
-        a.addiu(4,0,physical);a.call(TRAMP_STOP)
-        a.label(f'next_{physical}')
+    a.call(TRAMP_STOP)
     a.li(8,CONTROL);a.sw(0,8,28)
     a.lw(9,8,24);a.branch(4,9,0,'role_restored')
     a.addiu(10,0,1);a.branch(4,9,10,'restore_role0')
